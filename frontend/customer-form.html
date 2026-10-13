@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ฟอร์มเพิ่มลูกค้า — ตัวอย่าง Frontend ↔ Backend API</title>
+<style>
+  :root { --pri: #2563eb; --ok: #16a34a; --bad: #dc2626; --line: #e2e8f0; }
+  * { box-sizing: border-box; font-family: "Noto Sans Thai", sans-serif; }
+  body { margin: 0; background: #f1f5f9; color: #0f172a; }
+  .wrap { max-width: 860px; margin: 32px auto; padding: 0 16px; }
+  h1 { font-size: 22px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 13px; color: #475569; margin-bottom: 4px; }
+  label .req { color: var(--bad); }
+  input, select, textarea {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--line);
+    border-radius: 6px; font-size: 14px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-color: var(--pri); }
+  .err { color: var(--bad); font-size: 12px; min-height: 16px; }
+  button {
+    background: var(--pri); color: #fff; border: 0; border-radius: 6px;
+    padding: 10px 22px; font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  .msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; display: none; font-size: 14px; }
+  .msg.ok { display: block; background: #dcfce7; color: #166534; }
+  .msg.bad { display: block; background: #fee2e2; color: #991b1b; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { background: #f8fafc; font-size: 12px; color: #64748b; }
+  .search { display: flex; gap: 8px; margin-bottom: 12px; }
+  .search input { flex: 1; }
+  .empty { color: #94a3b8; text-align: center; padding: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ฟอร์มเพิ่มลูกค้า (ตัวอย่าง Frontend ↔ Backend API)</h1>
+
+  <!-- ===== ฟอร์มกรอกข้อมูล ===== -->
+  <div class="card">
+    <div id="msg" class="msg"></div>
+    <form id="customerForm" novalidate>
+      <div class="grid">
+        <div>
+          <label>รหัสลูกค้า <span class="req">*</span></label>
+          <input name="customer_code" placeholder="C-2001" maxlength="20" required />
+          <div class="err" data-for="customer_code"></div>
+        </div>
+        <div>
+          <label>สถานะ</label>
+          <select name="status">
+            <option value="Lead">Lead</option>
+            <option value="ติดต่อแล้ว">ติดต่อแล้ว</option>
+            <option value="เสนอราคา">เสนอราคา</option>
+            <option value="กำลังเจรจา">กำลังเจรจา</option>
+            <option value="ปิดการขาย">ปิดการขาย</option>
+            <option value="ลูกค้าประจำ">ลูกค้าประจำ</option>
+            <option value="แพ้งาน">แพ้งาน</option>
+          </select>
+          <div class="err" data-for="status"></div>
+        </div>
+        <div>
+          <label>ชื่อ <span class="req">*</span></label>
+          <input name="first_name" maxlength="100" required />
+          <div class="err" data-for="first_name"></div>
+        </div>
+        <div>
+          <label>นามสกุล <span class="req">*</span></label>
+          <input name="last_name" maxlength="100" required />
+          <div class="err" data-for="last_name"></div>
+        </div>
+        <div>
+          <label>เบอร์โทร</label>
+          <input name="phone" placeholder="081-234-5678" maxlength="20" />
+          <div class="err" data-for="phone"></div>
+        </div>
+        <div>
+          <label>อีเมล</label>
+          <input name="email" type="email" maxlength="150" />
+          <div class="err" data-for="email"></div>
+        </div>
+        <div class="full">
+          <label>บริษัท</label>
+          <input name="company" maxlength="150" />
+          <div class="err" data-for="company"></div>
+        </div>
+        <div class="full">
+          <label>ที่อยู่</label>
+          <input name="address" maxlength="500" />
+          <div class="err" data-for="address"></div>
+        </div>
+        <div class="full">
+          <label>บันทึก</label>
+          <textarea name="notes" rows="2" maxlength="1000"></textarea>
+          <div class="err" data-for="notes"></div>
+        </div>
+      </div>
+      <button type="submit" id="btnSave">บันทึกลงฐานข้อมูล</button>
+    </form>
+  </div>
+
+  <!-- ===== ตารางข้อมูลจาก API ===== -->
+  <div class="card">
+    <div class="search">
+      <input id="q" placeholder="ค้นหา: รหัส ชื่อ บริษัท อีเมล เบอร์..." />
+      <button id="btnSearch" type="button">ค้นหา</button>
+      <button id="btnReset" type="button" style="background:#64748b">ล้าง</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>บริษัท</th><th>เบอร์</th><th>สถานะ</th><th></th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">กำลังโหลด...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* ที่อยู่ของ Backend — แก้ได้ถ้ารันคนละพอร์ต */
+const API = "http://localhost:5000/api/customers";
+const $ = (s) => document.querySelector(s);
+
+function showMsg(ok, text) {
+  const el = $("#msg");
+  el.className = "msg " + (ok ? "ok" : "bad");
+  el.textContent = text;
+}
+function showFieldErrors(errors) {
+  document.querySelectorAll(".err").forEach((e) => (e.textContent = ""));
+  if (errors) for (const [field, msg] of Object.entries(errors)) {
+    const el = document.querySelector(`.err[data-for="${field}"]`);
+    if (el) el.textContent = msg;
+  }
+}
+
+/* ---------- บันทึกข้อมูล: POST /api/customers ---------- */
+$("#customerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  showMsg(false, ""); showFieldErrors(null);
+
+  const body = Object.fromEntries(new FormData(e.target).entries());
+  const btn = $("#btnSave");
+  btn.disabled = true;
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const json = await res.json();
+    if (json.success) {
+      showMsg(true, json.message + " (id: " + json.data.id + ")");
+      e.target.reset();
+      load();
+    } else {
+      showFieldErrors(json.errors);
+      showMsg(false, json.message);
+    }
+  } catch {
+    showMsg(false, "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจว่า backend รันอยู่ (npm start ในโฟลเดอร์ backend)");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ---------- โหลดรายการ: GET /api/customers ---------- */
+async function load(search = "") {
+  const url = search ? API + "?search=" + encodeURIComponent(search) : API;
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    const tb = $("#rows");
+    if (!json.data.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="empty">ไม่พบข้อมูล</td></tr>';
+      return;
+    }
+    tb.innerHTML = json.data.map((r) => `
+      <tr>
+        <td>${r.customer_code}</td>
+        <td>${r.first_name} ${r.last_name}</td>
+        <td>${r.company || "—"}</td>
+        <td>${r.phone || "—"}</td>
+        <td>${r.status}</td>
+        <td><a href="#" data-del="${r.id}" style="color:#dc2626">ลบ</a></td>
+      </tr>`).join("");
+  } catch {
+    $("#rows").innerHTML = '<tr><td colspan="6" class="empty">เชื่อมต่อ backend ไม่ได้</td></tr>';
+  }
+}
+
+/* ---------- ค้นหา ---------- */
+$("#btnSearch").onclick = () => load($("#q").value.trim());
+$("#btnReset").onclick = () => { $("#q").value = ""; load(); };
+$("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") load($("#q").value.trim()); });
+
+/* ---------- ลบ: DELETE /api/customers/:id ---------- */
+$("#rows").addEventListener("click", async (e) => {
+  const id = e.target.dataset.del;
+  if (!id || !confirm("ยืนยันลบลูกค้ารายนี้?")) return;
+  const res = await fetch(API + "/" + id, { method: "DELETE" });
+  const json = await res.json();
+  showMsg(json.success, json.message);
+  load();
+});
+
+load();
+</script>
+</body>
+</html>

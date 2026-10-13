@@ -1,0 +1,27 @@
+{
+  "name": "tarmtid-crm-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend ระบบ CRM — REST API บันทึกข้อมูลลูกค้าลง MySQL ด้วย Prepared Statements",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "db:init": "node sql/init.js",
+    "demo": "node scripts/demo.js",
+    "test:e2e": "node scripts/e2e-test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mysql2": "^3.14.1"
+  },
+  "devDependencies": {
+    "mysql-memory-server": "^1.17.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
