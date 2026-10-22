@@ -31,6 +31,7 @@ const ROOT = __dirname;
      - DB_SSL=1 หรือ 0        บังคับเปิด/ปิด เอง
      - DB_SSL=…?sslmode=…      ใน DATABASE_URL ก็ใช้ได้ (disable = ปิด)
      - DB_SSL_REJECT_UNAUTHORIZED=0  ใช้เมื่อ certificate ตรวจสอบไม่ผ่าน
+     - DB_SSL_CA=path/to/ca.pem      ตรวจสอบ certificate ด้วย CA ของผู้ให้บริการ (เช่น Aiven)
 */
 function parseDatabaseUrl(raw) {
   const u = new URL(raw);
@@ -52,7 +53,15 @@ function resolveSsl() {
     : !/^(0|false|off|disable|disabled)$/i.test(String(flag).trim());
   if (!enabled) return undefined;
   const reject = process.env.DB_SSL_REJECT_UNAUTHORIZED;
-  return { rejectUnauthorized: reject === undefined ? true : !/^(0|false|off|no)$/i.test(String(reject).trim()) };
+  const ssl = { rejectUnauthorized: reject === undefined ? true : !/^(0|false|off|no)$/i.test(String(reject).trim()) };
+  if (process.env.DB_SSL_CA) {
+    try { ssl.ca = fs.readFileSync(process.env.DB_SSL_CA, "utf8"); }
+    catch (e) {
+      console.error("[cmr] อ่านไฟล์ CA จาก DB_SSL_CA ไม่ได้: " + process.env.DB_SSL_CA + " (" + e.message + ")");
+      process.exit(1);
+    }
+  }
+  return ssl;
 }
 
 /* CMR_DB_NAME ใช้ตอนทดสอบเพื่อไม่ให้แตะฐานข้อมูลจริง */

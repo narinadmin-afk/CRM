@@ -13,6 +13,7 @@
  *   8. "รีสตาร์ทเซิร์ฟเวอร์" → ข้อมูลยังอยู่ครบ (พิสูจน์ว่าลง MySQL จริง ไม่ใช่หน่วยความจำ)
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
 import "dotenv/config";
@@ -23,13 +24,25 @@ const PORT = 3998;
 const TEST_DB = "cmr_test_lifecycle";
 const B = `http://localhost:${PORT}`;
 
+/* SSL ตรงกับ server.js: เปิดอัตโนมัติเมื่อ DB อยู่ภายนอก (TiDB/Aiven บังคับ TLS) */
+const DB_SSL_WANTED = process.env.DB_SSL !== undefined
+  ? !/^(0|false|off|disable|disabled)$/i.test(process.env.DB_SSL)
+  : !!(process.env.DB_HOST && !/^(localhost|127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(process.env.DB_HOST));
+const DB_SSL = DB_SSL_WANTED
+  ? {
+      rejectUnauthorized: !/^(0|false|off|no)$/i.test(process.env.DB_SSL_REJECT_UNAUTHORIZED ?? "1"),
+      ...(process.env.DB_SSL_CA ? { ca: readFileSync(process.env.DB_SSL_CA, "utf8") } : {})
+    }
+  : undefined;
+
 function connect() {
   return mysql.createConnection({
     host: process.env.DB_HOST || "localhost",
     user: process.env.DB_USER || "root",
     password: process.env.DB_PASSWORD || "",
     port: Number(process.env.DB_PORT) || 3306,
-    database: TEST_DB
+    database: TEST_DB,
+    ssl: DB_SSL
   });
 }
 
@@ -39,7 +52,8 @@ async function resetDb() {
     host: process.env.DB_HOST || "localhost",
     user: process.env.DB_USER || "root",
     password: process.env.DB_PASSWORD || "",
-    port: Number(process.env.DB_PORT) || 3306
+    port: Number(process.env.DB_PORT) || 3306,
+    ssl: DB_SSL
   });
   await conn.query("DROP DATABASE IF EXISTS `" + TEST_DB + "`");
   await conn.end();

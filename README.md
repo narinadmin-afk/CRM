@@ -61,7 +61,9 @@ node server.js
 - `.env` **ไม่ถูก push ขึ้น git** — ค่า DB ต้องตั้งที่ Environment ของ Dashboard เท่านั้น
   (หรือแยกเป็น `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`) และกด **Redeploy** ทุกครั้งที่แก้ค่า
 - MySQL บน Render มีเฉพาะแผนแบบมีค่าใช้จ่าย — ถ้าใช้ free plan ให้ต่อ MySQL ภายนอก (เช่น Aiven) แล้วเอา URL มาใส่ `DATABASE_URL`
-- SSL เปิดอัตโนมัติเมื่อ host ไม่ใช่ localhost ถ้า certificate ตรวจสอบไม่ผ่านให้ตั้ง `DB_SSL_REJECT_UNAUTHORIZED=0`
+- SSL เปิดอัตโนมัติเมื่อ host ไม่ใช่ localhost — ถ้าต่อ DB ภายนอก (เช่น Aiven) ให้ตั้ง `DB_SSL_CA=path/to/ca.pem`
+  (ดาวน์โหลด CA จาก console ผู้ให้บริการ) เพื่อตรวจสอบ certificate จริง หรือตั้ง `DB_SSL_REJECT_UNAUTHORIZED=0`
+  เพื่อข้ามการตรวจสอบ (การเข้ารหัส TLS ยังทำงานเหมือนเดิม)
 - `/api/health` ตอบ 200 ได้ก็ต่อเมื่อเซิร์ฟเวอร์ต่อ MySQL + สร้างตารางสำเร็จแล้ว
   (ตอน start ต่อ DB ไม่ได้จะ exit 1 ทันที) Render ใช้ endpoint นี้ตัดสินว่า deploy สำเร็จหรือไม่
 - รอบแรกหลัง deploy: ระบบสร้างตาราง + seed ข้อมูลตัวอย่างให้เอง แล้วสมัครบัญชีแรกผ่าน
