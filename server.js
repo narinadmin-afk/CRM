@@ -22,13 +22,47 @@ const scryptAsync = promisify(crypto.scrypt);
 const envPort = Number(process.env.PORT);
 const PORT = Number.isInteger(envPort) && envPort > 0 ? envPort : 3000;
 const ROOT = __dirname;
-/* ข้อมูล MySQL อ่านจาก .env — CMR_DB_NAME ใช้ตอนทดสอบเพื่อไม่ให้แตะฐานข้อมูลจริง */
-const DB_NAME = process.env.CMR_DB_NAME || process.env.DB_NAME || "cmr";
+/* ---- การเชื่อมต่อ MySQL ----
+   อ่านค่าจาก .env ได้ 2 แบบ (ค่าแยกต่างหาก DB_HOST/DB_USER/... สำคัญกว่า):
+     1) DB_HOST / DB_USER / DB_PASSWORD / DB_NAME / DB_PORT
+     2) DATABASE_URL  — รูปแบบ mysql://user:pass@host:3306/dbname
+        ใช้ตอน deploy บน platform อย่าง Render / Railway ที่ให้ URL มาทั้งก้อน
+   SSL: เปิดอัตโนมัติเมื่อ host ไม่ใช่ localhost (Render บังคับ SSL)
+     - DB_SSL=1 หรือ 0        บังคับเปิด/ปิด เอง
+     - DB_SSL=…?sslmode=…      ใน DATABASE_URL ก็ใช้ได้ (disable = ปิด)
+     - DB_SSL_REJECT_UNAUTHORIZED=0  ใช้เมื่อ certificate ตรวจสอบไม่ผ่าน
+*/
+function parseDatabaseUrl(raw) {
+  const u = new URL(raw);
+  return {
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 3306,
+    user: decodeURIComponent(u.username || ""),
+    password: decodeURIComponent(u.password || ""),
+    database: decodeURIComponent((u.pathname || "").replace(/^\//, "")) || undefined,
+    sslParam: u.searchParams.get("ssl") || u.searchParams.get("sslmode") || undefined
+  };
+}
+const urlCfg = process.env.DATABASE_URL ? parseDatabaseUrl(process.env.DATABASE_URL) : {};
+const isLocalHost = (h) => !h || h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "::ffff:127.0.0.1";
+function resolveSsl() {
+  const flag = process.env.DB_SSL ?? urlCfg.sslParam;
+  const enabled = flag === undefined
+    ? !isLocalHost(urlCfg.host || process.env.DB_HOST) // ค่าเฉลี่ย: remote → เปิด, localhost → ปิด
+    : !/^(0|false|off|disable|disabled)$/i.test(String(flag).trim());
+  if (!enabled) return undefined;
+  const reject = process.env.DB_SSL_REJECT_UNAUTHORIZED;
+  return { rejectUnauthorized: reject === undefined ? true : !/^(0|false|off|no)$/i.test(String(reject).trim()) };
+}
+
+/* CMR_DB_NAME ใช้ตอนทดสอบเพื่อไม่ให้แตะฐานข้อมูลจริง */
+const DB_NAME = process.env.CMR_DB_NAME || process.env.DB_NAME || urlCfg.database || "cmr";
 const DB = {
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  port: Number(process.env.DB_PORT) || 3306
+  host: process.env.DB_HOST || urlCfg.host || "localhost",
+  user: process.env.DB_USER || urlCfg.user || "root",
+  password: process.env.DB_PASSWORD ?? urlCfg.password ?? "",
+  port: Number(process.env.DB_PORT) || urlCfg.port || 3306,
+  ssl: resolveSsl()
 };
 
 const SESSION_COOKIE = "cmr_session";
@@ -713,7 +747,8 @@ server.on("error", (err) => {
     await ensureSeed();
   } catch (e) {
     console.error("[cmr] เชื่อมต่อ MySQL ไม่สำเร็จ:", e.code || e.message);
-    console.error("      ตรวจไฟล์ .env (DB_HOST/DB_USER/DB_PASSWORD/DB_NAME) และว่า MySQL รันอยู่");
+    console.error("      ตรวจ env DB_HOST/DB_USER/DB_PASSWORD/DB_NAME (หรือ DATABASE_URL ทั้งก้อน) และว่า MySQL รันอยู่");
+    if (DB.ssl) console.error("      ถ้าใช้ platform ที่บังคับ SSL เช่น Render ลอง DB_SSL_REJECT_UNAUTHORIZED=0");
     process.exit(1);
   }
 
