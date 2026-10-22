@@ -3,26 +3,54 @@
  * รัน:  node tests/lifecycle.test.mjs
  *
  * จุดที่ตั้งใจตรวจสอบ:
- *   1. เปิดเซิร์ฟเวอร์บน DB ชั่วคราว → ได้ข้อมูลตัวอย่างครบ (ไม่แตะ data/cmr.sqlite จริง)
+ *   1. เปิดเซิร์ฟเวอร์บน database ชั่วคราว → ได้ข้อมูลตัวอย่างครบ (ไม่แตะฐานข้อมูล cmr จริง)
  *   2. สร้างระเบียน → มี activity "สร้างระเบียน", created_at = updated_at
  *   3. คอมเมนต์ → activity ถูกต่อท้าย และ updated_at ขยับขึ้นจริง
  *   4. เปลี่ยนสถานะ → values.status เปลี่ยน + มี activity บันทึก "A → B"
  *   5. แก้ไขฟิลด์ → activity ระบุชื่อฟิลด์ (ภาษาไทย) ที่ถูกแก้
  *   6. เพิ่มฟิลด์เองใน schema → บันทึกค่าลงฟิลด์ใหม่ได้และอ่านกลับครบ
  *   7. ลบระเบียน → หายจากลิสต์ และ GET ตอบ 404
- *   8. "รีสตาร์ทเซิร์ฟเวอร์" → ข้อมูลยังอยู่ครบ (พิสูจน์ว่าลง SQLite จริง ไม่ใช่หน่วยความจำ)
+ *   8. "รีสตาร์ทเซิร์ฟเวอร์" → ข้อมูลยังอยู่ครบ (พิสูจน์ว่าลง MySQL จริง ไม่ใช่หน่วยความจำ)
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import fs from "node:fs";
-import path from "node:path";
+import mysql from "mysql2/promise";
+import "dotenv/config";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PORT = 3998;
-const DB_REL = "data/lifecycle-test.sqlite";
-const DB_ABS = path.join(ROOT, DB_REL);
+const TEST_DB = "cmr_test_lifecycle";
 const B = `http://localhost:${PORT}`;
+
+function connect() {
+  return mysql.createConnection({
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    port: Number(process.env.DB_PORT) || 3306,
+    database: TEST_DB
+  });
+}
+
+/** ลบ database ชั่วคราว — server.js จะสร้างใหม่เองตอนเริ่ม */
+async function resetDb() {
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    port: Number(process.env.DB_PORT) || 3306
+  });
+  await conn.query("DROP DATABASE IF EXISTS `" + TEST_DB + "`");
+  await conn.end();
+}
+
+async function countRecords() {
+  const conn = await connect();
+  const [[{ c }]] = await conn.query("SELECT COUNT(*) AS c FROM records");
+  await conn.end();
+  return Number(c);
+}
 
 let passed = 0;
 let failed = 0;
@@ -60,7 +88,7 @@ async function loginAsAdmin() {
 function startServer() {
   const child = spawn(process.execPath, ["server.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), CMR_DB_FILE: DB_REL },
+    env: { ...process.env, PORT: String(PORT), CMR_DB_NAME: TEST_DB },
     stdio: ["ignore", "pipe", "pipe"]
   });
   child.stdout.on("data", () => {});
@@ -81,12 +109,10 @@ async function waitReady() {
 
 const stop = (child) => { try { child.kill(); } catch { /* noop */ } };
 
-/* เคลียร์ DB ชั่วคราวของรอบก่อนหน้า */
-for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-  if (fs.existsSync(f)) fs.rmSync(f);
-}
+/* เคลียร์ database ชั่วคราวของรอบก่อนหน้า */
+await resetDb();
 
-console.log("เริ่มทดสอบ lifecycle (DB ชั่วคราว " + DB_REL + ") …");
+console.log("เริ่มทดสอบ lifecycle (database ชั่วคราว " + TEST_DB + ") …");
 let server = startServer();
 let keepAliveId = null;
 
@@ -155,7 +181,7 @@ try {
   r = await call("GET", "/api/records");
   ok("หายจากลิสต์หลังลบ", r.json.length === 17, "got " + r.json.length);
 
-  /* 8. รีสตาร์ทเซิร์ฟเวอร์ → ข้อมูลต้องยังอยู่ (พิสูจน์ว่าลง SQLite จริง) */
+  /* 8. รีสตาร์ทเซิร์ฟเวอร์ → ข้อมูลต้องยังอยู่ (พิสูจน์ว่าลง MySQL จริง) */
   stop(server);
   await sleep(500);
   server = startServer();
@@ -168,7 +194,7 @@ try {
     && r.json.values.email === "lc@example.com",
     JSON.stringify(r.json.values));
   const me = await call("GET", "/api/auth/me");
-  ok("เซสชันยังใช้ได้หลังรีสตาร์ท (เก็บลง SQLite จริง)", me.code === 200 && me.json.user && me.json.user.username === "boss");
+  ok("เซสชันยังใช้ได้หลังรีสตาร์ท (เก็บลง MySQL จริง)", me.code === 200 && me.json.user && me.json.user.username === "boss");
   ok("ประวัติ activity คงเหลือ 4 รายการ", r.json.activities.length === 4,
     "got " + (r.json.activities && r.json.activities.length));
   ok("activity เรียงเก่า→ใหม่ตามลำดับเวลา",
@@ -179,17 +205,16 @@ try {
   ok("schema ที่แก้ไว้คงอยู่หลังรีสตาร์ท",
     app.json.fields.length === 18 && app.json.fields.some((f) => f.key === "zone"));
 
-  /* 9. ความถูกต้องของข้อมูลที่บันทึกลงไฟล์จริง */
-  ok("ไฟล์ SQLite ถูกสร้างจริง", fs.existsSync(DB_ABS));
+  /* 9. ความถูกต้องของข้อมูลที่บันทึกลง MySQL จริง */
+  const dbCount = await countRecords();
+  ok("ข้อมูลถูกบันทึกลง MySQL จริง (17 ระเบียน)", dbCount === 17, "got " + dbCount);
 } catch (e) {
   failed++;
   console.error("✗ เกิดข้อผิดพลาด: " + (e && e.stack ? e.stack : e));
 } finally {
   stop(server);
   await sleep(300);
-  for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-    if (fs.existsSync(f)) fs.rmSync(f);
-  }
+  try { await resetDb(); } catch { /* noop */ }
 }
 
 console.log(`\nผลลัพธ์: ผ่าน ${passed} · ไม่ผ่าน ${failed}`);

@@ -1,7 +1,7 @@
 /* ============================================================
-   CMR Base — เซิร์ฟเวอร์ (Node.js ไม่ใช้แพ็กเกจภายนอก)
+   CMR Base — เซิร์ฟเวอร์ (Node.js)
    - เสิร์ฟไฟล์หน้าเว็บ (static)
-   - REST API เก็บข้อมูลลง SQLite ผ่าน node:sqlite ที่มากับ Node
+   - REST API เก็บข้อมูลลง MySQL ผ่าน mysql2 (ค่าเชื่อมต่ออ่านจาก .env)
    - ระบบผู้ใช้: Register / Login / Logout (session cookie + scrypt)
    - สิทธิ์: admin | member | viewer บังคับทุก endpoint ฝั่์เซิร์ฟเวอร์
    รัน:  node server.js   หรือ   npm start
@@ -12,8 +12,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { promisify } = require("node:util");
-const { DatabaseSync } = require("node:sqlite");
+const mysql = require("mysql2/promise");
 const Seed = require("./shared/seed.js");
+require("dotenv").config({ quiet: true });
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -21,9 +22,14 @@ const scryptAsync = promisify(crypto.scrypt);
 const envPort = Number(process.env.PORT);
 const PORT = Number.isInteger(envPort) && envPort > 0 ? envPort : 3000;
 const ROOT = __dirname;
-const DB_DIR = path.join(ROOT, "data");
-/* อนุญาตให้ชี้ฐานข้อมูลอื่นได้ (ใช้ตอนทดสอบเพื่อไม่ให้แตะข้อมูลจริง) */
-const DB_FILE = process.env.CMR_DB_FILE ? path.resolve(ROOT, process.env.CMR_DB_FILE) : path.join(DB_DIR, "cmr.sqlite");
+/* ข้อมูล MySQL อ่านจาก .env — CMR_DB_NAME ใช้ตอนทดสอบเพื่อไม่ให้แตะฐานข้อมูลจริง */
+const DB_NAME = process.env.CMR_DB_NAME || process.env.DB_NAME || "cmr";
+const DB = {
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  port: Number(process.env.DB_PORT) || 3306
+};
 
 const SESSION_COOKIE = "cmr_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 วัน
@@ -31,57 +37,38 @@ const ROLES = ["admin", "member", "viewer"];
 const ROLE_LABELS = { admin: "ผู้ดูแลระบบ", member: "สมาชิก", viewer: "ผู้ชม" };
 
 /* ---------------- database ---------------- */
-fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
-const db = new DatabaseSync(DB_FILE);
+const pool = mysql.createPool({
+  ...DB,
+  database: DB_NAME,
+  charset: "utf8mb4",
+  waitForConnections: true,
+  connectionLimit: 10,
+  multipleStatements: false
+});
 
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  CREATE TABLE IF NOT EXISTS meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS records (
-    id             TEXT PRIMARY KEY,
-    values_json    TEXT NOT NULL,
-    activities_json TEXT NOT NULL DEFAULT '[]',
-    created_at     INTEGER NOT NULL,
-    updated_at     INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,
-    username      TEXT NOT NULL UNIQUE,
-    display_name  TEXT NOT NULL,
-    email         TEXT NOT NULL DEFAULT '',
-    password_hash TEXT NOT NULL,
-    role          TEXT NOT NULL DEFAULT 'member',
-    active        INTEGER NOT NULL DEFAULT 1,
-    created_at    INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
-  );
-`);
-
-/* migration: เพิ่มคอลัมน์ผู้สร้างระเบียน (ฐานข้อมูลเดิมยังไม่มี) */
-for (const col of ["creator_id", "creator_name"]) {
-  const cols = db.prepare("PRAGMA table_info(records)").all().map((c) => c.name);
-  if (!cols.includes(col)) db.exec(`ALTER TABLE records ADD COLUMN ${col} TEXT`);
+/** สร้างฐานข้อมูล/ตารางจาก sql/schema.mysql.sql (idempotent — รันได้ทุกครั้งตอนเริ่ม) */
+async function ensureSchema() {
+  const ddl = fs.readFileSync(path.join(ROOT, "sql", "schema.mysql.sql"), "utf8")
+    .replace(/`cmr`/g, "`" + DB_NAME + "`");
+  const conn = await mysql.createConnection({ ...DB, multipleStatements: true, charset: "utf8mb4" });
+  try {
+    await conn.query(ddl);
+  } finally {
+    await conn.end();
+  }
 }
 
 /* ---------------- meta / schema ---------------- */
-function getMeta(key, fallback = null) {
-  const row = db.prepare("SELECT value FROM meta WHERE key = ?").get(key);
-  if (!row) return fallback;
-  try { return JSON.parse(row.value); } catch { return fallback; }
+async function getMeta(key, fallback = null) {
+  const [rows] = await pool.query("SELECT `value` FROM meta WHERE `key` = ?", [key]);
+  if (!rows.length) return fallback;
+  try { return JSON.parse(rows[0].value); } catch { return fallback; }
 }
-function setMeta(key, value) {
-  db.prepare(`
-    INSERT INTO meta (key, value) VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(key, JSON.stringify(value));
+async function setMeta(key, value) {
+  await pool.query(
+    "INSERT INTO meta (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)",
+    [key, JSON.stringify(value)]
+  );
 }
 
 /* ---------------- records ---------------- */
@@ -97,29 +84,31 @@ function rowToRecord(row) {
   };
 }
 
-function listRecords() {
-  return db.prepare("SELECT * FROM records ORDER BY updated_at DESC").all().map(rowToRecord);
+async function listRecords() {
+  const [rows] = await pool.query("SELECT * FROM records ORDER BY updated_at DESC");
+  return rows.map(rowToRecord);
 }
 
-function getRecord(id) {
-  const row = db.prepare("SELECT * FROM records WHERE id = ?").get(id);
-  return row ? rowToRecord(row) : null;
+async function getRecord(id) {
+  const [rows] = await pool.query("SELECT * FROM records WHERE id = ?", [id]);
+  return rows.length ? rowToRecord(rows[0]) : null;
 }
 
-function insertRecord(rec) {
-  db.prepare(`
-    INSERT INTO records (id, values_json, activities_json, created_at, updated_at, creator_id, creator_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(rec.id, JSON.stringify(rec.values), JSON.stringify(rec.activities),
-    rec.created_at, rec.updated_at, rec.creator_id || null, rec.creator_name || null);
+async function insertRecord(rec) {
+  await pool.query(
+    "INSERT INTO records (id, values_json, activities_json, created_at, updated_at, creator_id, creator_name) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [rec.id, JSON.stringify(rec.values), JSON.stringify(rec.activities),
+      rec.created_at, rec.updated_at, rec.creator_id || null, rec.creator_name || null]
+  );
 }
 
-function updateRecordRow(rec) {
-  db.prepare(`
-    UPDATE records SET values_json = ?, activities_json = ?, updated_at = ?, creator_id = ?, creator_name = ?
-    WHERE id = ?
-  `).run(JSON.stringify(rec.values), JSON.stringify(rec.activities), rec.updated_at,
-    rec.creator_id || null, rec.creator_name || null, rec.id);
+async function updateRecordRow(rec) {
+  await pool.query(
+    "UPDATE records SET values_json = ?, activities_json = ?, updated_at = ?, creator_id = ?, creator_name = ? WHERE id = ?",
+    [JSON.stringify(rec.values), JSON.stringify(rec.activities), rec.updated_at,
+      rec.creator_id || null, rec.creator_name || null, rec.id]
+  );
 }
 
 function newId(prefix = "rec") {
@@ -141,15 +130,21 @@ function publicUser(u) {
   };
 }
 
-function findUserByUsername(username) {
-  return db.prepare("SELECT * FROM users WHERE username = ?").get(String(username || "").trim().toLowerCase());
+async function findUserByUsername(username) {
+  const [rows] = await pool.query("SELECT * FROM users WHERE username = ?", [String(username || "").trim().toLowerCase()]);
+  return rows[0];
 }
-function findUserById(id) {
-  return db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+async function findUserById(id) {
+  const [rows] = await pool.query("SELECT * FROM users WHERE id = ?", [id]);
+  return rows[0];
 }
-function countUsers() { return db.prepare("SELECT COUNT(*) AS c FROM users").get().c; }
-function countActiveAdmins() {
-  return db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1").get().c;
+async function countUsers() {
+  const [[r]] = await pool.query("SELECT COUNT(*) AS c FROM users");
+  return Number(r.c);
+}
+async function countActiveAdmins() {
+  const [[r]] = await pool.query("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1");
+  return Number(r.c);
 }
 
 async function hashPassword(password) {
@@ -186,35 +181,36 @@ function bearerOrCookie(req) {
   return parseCookies(req)[SESSION_COOKIE] || null;
 }
 
-/** คืนข้อมูลผู้ใช้จาก session (และย้าย session ถ้ายังไม่หมดอายุ) */
-function userFromRequest(req) {
+/** คืนข้อมูลผู้ใช้จาก session (และลบ session ถ้ายังไม่หมดอายุ) */
+async function userFromRequest(req) {
   const token = bearerOrCookie(req);
   if (!token) return null;
-  const s = db.prepare("SELECT * FROM sessions WHERE token = ?").get(token);
+  const [rows] = await pool.query("SELECT * FROM sessions WHERE token = ?", [token]);
+  const s = rows[0];
   if (!s) return null;
   if (Number(s.expires_at) < Date.now()) {
-    db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+    await pool.query("DELETE FROM sessions WHERE token = ?", [token]);
     return null;
   }
-  const u = findUserById(s.user_id);
+  const u = await findUserById(s.user_id);
   if (!u || !u.active) return null;
   return u;
 }
 
-function createSession(res, userId) {
+async function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
-  db.prepare("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
-    .run(token, userId, now, now + SESSION_TTL_MS);
+  await pool.query("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+    [token, userId, now, now + SESSION_TTL_MS]);
   appendCookie(res, SESSION_COOKIE, token, {
     httpOnly: true, sameSite: "Lax", path: "/", maxAge: SESSION_TTL_MS / 1000
   });
   return token;
 }
 
-function destroySession(req, res) {
+async function destroySession(req, res) {
   const token = bearerOrCookie(req);
-  if (token) db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+  if (token) await pool.query("DELETE FROM sessions WHERE token = ?", [token]);
   appendCookie(res, SESSION_COOKIE, "", { httpOnly: true, sameSite: "Lax", path: "/", maxAge: 0 });
 }
 
@@ -250,13 +246,14 @@ function canDeleteRecord(u, rec) {
 }
 
 /* ---------------- seed ---------------- */
-function ensureSeed() {
-  if (!getMeta("schema")) setMeta("schema", Seed.DEFAULT_SCHEMA);
-  const count = db.prepare("SELECT COUNT(*) AS c FROM records").get().c;
-  if (count === 0) {
+async function ensureSeed() {
+  if (!(await getMeta("schema"))) await setMeta("schema", Seed.DEFAULT_SCHEMA);
+  const [[{ c }]] = await pool.query("SELECT COUNT(*) AS c FROM records");
+  if (Number(c) === 0) {
     const now = Date.now();
-    Seed.makeRecords().forEach((rec, i) => {
-      insertRecord({
+    const rows = Seed.makeRecords();
+    for (const [i, rec] of rows.entries()) {
+      await insertRecord({
         id: rec.id || "rec_seed_" + i,
         values: rec.values,
         activities: rec.activities,
@@ -264,11 +261,10 @@ function ensureSeed() {
         updated_at: rec.updated_at || now,
         creator_id: null, creator_name: "ระบบ"
       });
-    });
+    }
     console.log("[cmr] seeded demo data:", Seed.SEED_ROWS.length, "records");
   }
 }
-ensureSeed();
 
 /* ---------------- helpers ---------------- */
 function sendJson(res, status, data) {
@@ -351,7 +347,7 @@ async function handleApi(req, res, pathname) {
 
   /* ---------- public ---------- */
   if (action === "health" && method === "GET") {
-    sendJson(res, 200, { ok: true, storage: "sqlite", file: path.relative(ROOT, DB_FILE), auth: true });
+    sendJson(res, 200, { ok: true, storage: "mysql", database: DB_NAME, host: DB.host + ":" + DB.port, auth: true });
     return true;
   }
 
@@ -366,11 +362,11 @@ async function handleApi(req, res, pathname) {
     if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
       sendJson(res, 400, { error: "ชื่อผู้ใช้ต้องเป็น a-z, 0-9, . _ - ความยาว 3–32 ตัวอักษร" }); return true;
     }
-    if (findUserByUsername(username)) { sendJson(res, 409, { error: "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว" }); return true; }
+    if (await findUserByUsername(username)) { sendJson(res, 409, { error: "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว" }); return true; }
     if (!displayName) { sendJson(res, 400, { error: "กรุณากรอกชื่อที่แสดง" }); return true; }
     if (password.length < 6) { sendJson(res, 400, { error: "รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร" }); return true; }
 
-    const isFirst = countUsers() === 0;
+    const isFirst = (await countUsers()) === 0;
     const role = isFirst ? "admin" : "member";
     const user = {
       id: newId("usr"),
@@ -382,12 +378,13 @@ async function handleApi(req, res, pathname) {
       active: 1,
       created_at: Date.now()
     };
-    db.prepare(`
-      INSERT INTO users (id, username, display_name, email, password_hash, role, active, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(user.id, user.username, user.display_name, user.email, user.password_hash, user.role, user.active, user.created_at);
+    await pool.query(
+      "INSERT INTO users (id, username, display_name, email, password_hash, role, active, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [user.id, user.username, user.display_name, user.email, user.password_hash, user.role, user.active, user.created_at]
+    );
 
-    createSession(res, user.id);
+    await createSession(res, user.id);
     sendJson(res, 201, { user: publicUser(user), first_admin: isFirst });
     return true;
   }
@@ -397,39 +394,39 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const username = String(body.username || "").trim().toLowerCase();
     const password = String(body.password || "");
-    const user = findUserByUsername(username);
+    const user = await findUserByUsername(username);
 
     if (!user || !(await verifyPassword(password, user.password_hash))) {
       sendJson(res, 401, { error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }); return true;
     }
     if (!user.active) { sendJson(res, 403, { error: "บัญชีนี้ถูกระงับการใช้งาน" }); return true; }
 
-    createSession(res, user.id);
+    await createSession(res, user.id);
     sendJson(res, 200, { user: publicUser(user) });
     return true;
   }
 
   /* GET /api/auth/setup — ใช้แสดงคำแนะนำหน้า Login (สาธารณะ) */
   if (action === "auth" && seg[2] === "setup" && method === "GET") {
-    sendJson(res, 200, { has_users: countUsers() > 0 });
+    sendJson(res, 200, { has_users: (await countUsers()) > 0 });
     return true;
   }
 
   /* GET /api/auth/me */
   if (action === "auth" && seg[2] === "me" && method === "GET") {
-    sendJson(res, 200, { user: publicUser(userFromRequest(req)) });
+    sendJson(res, 200, { user: publicUser(await userFromRequest(req)) });
     return true;
   }
 
   /* POST /api/auth/logout */
   if (action === "auth" && seg[2] === "logout" && method === "POST") {
-    destroySession(req, res);
+    await destroySession(req, res);
     sendJson(res, 200, { ok: true });
     return true;
   }
 
   /* ---------- ต้องเข้าสู่ระบบ ---------- */
-  const user = userFromRequest(req);
+  const user = await userFromRequest(req);
   if (!user) { sendJson(res, 401, { error: "ต้องเข้าสู่ระบบก่อนใช้งาน" }); return true; }
 
   const needRole = (role) => {
@@ -446,9 +443,9 @@ async function handleApi(req, res, pathname) {
     if (!needRole()) return true;
 
     if (seg.length === 2 && method === "GET") {
-      const rows = db.prepare("SELECT * FROM users ORDER BY created_at ASC").all();
-      const counts = db.prepare("SELECT creator_id, COUNT(*) AS c FROM records WHERE creator_id IS NOT NULL GROUP BY creator_id").all();
-      const map = Object.fromEntries(counts.map((r) => [r.creator_id, r.c]));
+      const [rows] = await pool.query("SELECT * FROM users ORDER BY created_at ASC");
+      const [counts] = await pool.query("SELECT creator_id, COUNT(*) AS c FROM records WHERE creator_id IS NOT NULL GROUP BY creator_id");
+      const map = Object.fromEntries(counts.map((r) => [r.creator_id, Number(r.c)]));
       sendJson(res, 200, rows.map((u) => ({ ...publicUser(u), record_count: map[u.id] || 0 })));
       return true;
     }
@@ -461,7 +458,7 @@ async function handleApi(req, res, pathname) {
       const password = String(body.password || "");
 
       if (!/^[a-z0-9._-]{3,32}$/.test(username)) { sendJson(res, 400, { error: "ชื่อผู้ใช้ไม่ถูกต้อง (a-z 0-9 . _ - 3–32 ตัว)" }); return true; }
-      if (findUserByUsername(username)) { sendJson(res, 409, { error: "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว" }); return true; }
+      if (await findUserByUsername(username)) { sendJson(res, 409, { error: "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว" }); return true; }
       if (!displayName) { sendJson(res, 400, { error: "กรุณากรอกชื่อที่แสดง" }); return true; }
       if (password.length < 6) { sendJson(res, 400, { error: "รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร" }); return true; }
 
@@ -471,24 +468,24 @@ async function handleApi(req, res, pathname) {
         password_hash: await hashPassword(password),
         role, active: 1, created_at: Date.now()
       };
-      db.prepare(`
-        INSERT INTO users (id, username, display_name, email, password_hash, role, active, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(created.id, created.username, created.display_name, created.email, created.password_hash, created.role, created.active, created.created_at);
+      await pool.query(
+        "INSERT INTO users (id, username, display_name, email, password_hash, role, active, created_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [created.id, created.username, created.display_name, created.email, created.password_hash, created.role, created.active, created.created_at]
+      );
       sendJson(res, 201, { user: publicUser(created) });
       return true;
     }
 
-    if (seg.length === 3 && method === "PATCH") {
-      const id = decodeURIComponent(seg[2]);
-      const target = findUserById(id);
+    if (seg.length === 3 && method === "PATCH") {      const id = decodeURIComponent(seg[2]);
+      const target = await findUserById(id);
       if (!target) { sendJson(res, 404, { error: "ไม่พบผู้ใช้" }); return true; }
       const body = await readBody(req);
 
       if (body.role !== undefined) {
         if (!ROLES.includes(body.role)) { sendJson(res, 400, { error: "บทบาทไม่ถูกต้อง" }); return true; }
         const losingAdmin = target.role === "admin" && body.role !== "admin";
-        if (losingAdmin && countActiveAdmins() <= 1) {
+        if (losingAdmin && (await countActiveAdmins()) <= 1) {
           sendJson(res, 400, { error: "ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน" }); return true;
         }
         target.role = body.role;
@@ -496,11 +493,11 @@ async function handleApi(req, res, pathname) {
       if (body.active !== undefined) {
         const next = body.active ? 1 : 0;
         if (next === 0 && target.id === user.id) { sendJson(res, 400, { error: "ระงับบัญชีตัวเองไม่ได้" }); return true; }
-        if (next === 0 && target.role === "admin" && countActiveAdmins() <= 1) {
+        if (next === 0 && target.role === "admin" && (await countActiveAdmins()) <= 1) {
           sendJson(res, 400, { error: "ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน" }); return true;
         }
         target.active = next;
-        if (!next) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(target.id); // เด้งออกทันที
+        if (!next) await pool.query("DELETE FROM sessions WHERE user_id = ?", [target.id]); // เด้งออกทันที
       }
       if (body.display_name !== undefined) {
         const dn = String(body.display_name).trim();
@@ -511,27 +508,28 @@ async function handleApi(req, res, pathname) {
       if (body.password !== undefined) {
         if (String(body.password).length < 6) { sendJson(res, 400, { error: "รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร" }); return true; }
         target.password_hash = await hashPassword(body.password);
-        db.prepare("DELETE FROM sessions WHERE user_id = ?").run(target.id); // บังคับ login ใหม่
+        await pool.query("DELETE FROM sessions WHERE user_id = ?", [target.id]); // บังคับ login ใหม่
       }
 
-      db.prepare(`
-        UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, password_hash = ? WHERE id = ?
-      `).run(target.display_name, target.email, target.role, target.active, target.password_hash, target.id);
+      await pool.query(
+        "UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, password_hash = ? WHERE id = ?",
+        [target.display_name, target.email, target.role, target.active, target.password_hash, target.id]
+      );
       sendJson(res, 200, { user: publicUser(target) });
       return true;
     }
 
     if (seg.length === 3 && method === "DELETE") {
       const id = decodeURIComponent(seg[2]);
-      const target = findUserById(id);
+      const target = await findUserById(id);
       if (!target) { sendJson(res, 404, { error: "ไม่พบผู้ใช้" }); return true; }
       if (target.id === user.id) { sendJson(res, 400, { error: "ลบบัญชีตัวเองไม่ได้" }); return true; }
-      if (target.role === "admin" && countActiveAdmins() <= 1) {
+      if (target.role === "admin" && (await countActiveAdmins()) <= 1) {
         sendJson(res, 400, { error: "ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน" }); return true;
       }
-      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
-      db.prepare("UPDATE records SET creator_id = NULL WHERE creator_id = ?").run(id);
-      db.prepare("DELETE FROM users WHERE id = ?").run(id);
+      await pool.query("DELETE FROM sessions WHERE user_id = ?", [id]);
+      await pool.query("UPDATE records SET creator_id = NULL WHERE creator_id = ?", [id]);
+      await pool.query("DELETE FROM users WHERE id = ?", [id]);
       sendJson(res, 200, { ok: true, id });
       return true;
     }
@@ -539,7 +537,7 @@ async function handleApi(req, res, pathname) {
 
   /* ---------- โครงสร้างฟิลด์ ---------- */
   if (action === "app" && method === "GET") {
-    sendJson(res, 200, getMeta("schema", Seed.DEFAULT_SCHEMA));
+    sendJson(res, 200, await getMeta("schema", Seed.DEFAULT_SCHEMA));
     return true;
   }
   if (action === "app" && method === "PUT") {
@@ -555,14 +553,14 @@ async function handleApi(req, res, pathname) {
       if (keys.has(f.key)) { sendJson(res, 400, { error: "key ซ้ำ: " + f.key }); return true; }
       keys.add(f.key);
     }
-    setMeta("schema", schema);
+    await setMeta("schema", schema);
     sendJson(res, 200, schema);
     return true;
   }
 
   /* ---------- ระเบียน ---------- */
   if (action === "records" && seg.length === 2 && method === "GET") {
-    sendJson(res, 200, listRecords());
+    sendJson(res, 200, await listRecords());
     return true;
   }
 
@@ -570,7 +568,7 @@ async function handleApi(req, res, pathname) {
     if (!needWrite()) return true;
     const body = await readBody(req);
     const values = { ...((body && body.values) || {}) };
-    const schema = getMeta("schema", Seed.DEFAULT_SCHEMA);
+    const schema = await getMeta("schema", Seed.DEFAULT_SCHEMA);
     /* ถ้าไม่ได้ระบุผู้รับผิดชอบ ให้ตั้งเป็นคนสร้าง */
     if (schema.fields.some((f) => f.key === "owner") && !values.owner) values.owner = user.display_name;
 
@@ -584,15 +582,15 @@ async function handleApi(req, res, pathname) {
       creator_name: user.display_name,
       activities: [{ id: newId("a"), type: "create", text: "สร้างระเบียน", author: user.display_name, at: now }]
     };
-    insertRecord(rec);
+    await insertRecord(rec);
     sendJson(res, 201, rec);
     return true;
   }
 
   if (action === "records" && seg.length >= 3) {
     const id = decodeURIComponent(seg[2]);
-    const schema = getMeta("schema", Seed.DEFAULT_SCHEMA);
-    const rec = getRecord(id);
+    const schema = await getMeta("schema", Seed.DEFAULT_SCHEMA);
+    const rec = await getRecord(id);
     if (!rec) { sendJson(res, 404, { error: "ไม่พบระเบียน" }); return true; }
 
     if (method === "GET" && !seg[3]) { sendJson(res, 200, rec); return true; }
@@ -617,7 +615,7 @@ async function handleApi(req, res, pathname) {
           author: user.display_name, at: rec.updated_at
         });
       }
-      updateRecordRow(rec);
+      await updateRecordRow(rec);
       sendJson(res, 200, rec);
       return true;
     }
@@ -628,7 +626,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 403, { error: "คุณไม่มีสิทธิ์ลบระเบียนนี้ (ลบได้เฉพาะระเบียนที่คุณสร้าง หรือผู้ดูแลระบบ)" });
         return true;
       }
-      db.prepare("DELETE FROM records WHERE id = ?").run(id);
+      await pool.query("DELETE FROM records WHERE id = ?", [id]);
       sendJson(res, 200, { ok: true, id });
       return true;
     }
@@ -641,7 +639,7 @@ async function handleApi(req, res, pathname) {
       const at = Date.now();
       rec.activities.push({ id: newId("a"), type: "comment", text, author: user.display_name, at });
       rec.updated_at = at;
-      updateRecordRow(rec);
+      await updateRecordRow(rec);
       sendJson(res, 200, rec);
       return true;
     }
@@ -662,7 +660,7 @@ async function handleApi(req, res, pathname) {
         id: newId("a"), type: "status",
         text: `เปลี่ยนสถานะ: ${old} → ${status}`, author: user.display_name, at: rec.updated_at
       });
-      updateRecordRow(rec);
+      await updateRecordRow(rec);
       sendJson(res, 200, rec);
       return true;
     }
@@ -671,11 +669,13 @@ async function handleApi(req, res, pathname) {
   /* ---------- รีเซ็ตข้อมูล (admin) ---------- */
   if (action === "reset" && method === "POST") {
     if (!needRole()) return true;
-    db.prepare("DELETE FROM records").run();
-    setMeta("schema", Seed.DEFAULT_SCHEMA);
-    Seed.makeRecords().forEach((rec, i) =>
-      insertRecord({ ...rec, id: rec.id || "rec_seed_" + i, creator_id: null, creator_name: "ระบบ" }));
-    sendJson(res, 200, { ok: true, records: listRecords().length });
+    await pool.query("DELETE FROM records");
+    await setMeta("schema", Seed.DEFAULT_SCHEMA);
+    const rows = Seed.makeRecords();
+    for (const [i, rec] of rows.entries()) {
+      await insertRecord({ ...rec, id: rec.id || "rec_seed_" + i, creator_id: null, creator_name: "ระบบ" });
+    }
+    sendJson(res, 200, { ok: true, records: (await listRecords()).length });
     return true;
   }
 
@@ -706,13 +706,26 @@ server.on("error", (err) => {
   throw err;
 });
 
-server.listen(PORT, () => {
-  console.log("--------------------------------------------------");
-  console.log("  Tarmtid.com พร้อมใช้งาน");
-  console.log("  เปิดเบราว์เซอร์ที่  http://localhost:" + PORT);
-  console.log("  ฐานข้อมูล SQLite ที่  " + path.relative(ROOT, DB_FILE));
-  console.log(countUsers() === 0
-    ? "  ยังไม่มีผู้ใช้: สร้างบัญชีแรกผ่าน API POST /api/auth/register (บัญชีแรกได้สิทธิ์ admin)"
-    : "  มีผู้ใช้ในระบบแล้ว " + countUsers() + " บัญชี");
-  console.log("--------------------------------------------------");
-});
+/* เริ่ม: สร้าง schema ถ้ายังไม่มี → seed ถ้าจำเป็น → ค่อยเปิดพอร์ต */
+(async () => {
+  try {
+    await ensureSchema();
+    await ensureSeed();
+  } catch (e) {
+    console.error("[cmr] เชื่อมต่อ MySQL ไม่สำเร็จ:", e.code || e.message);
+    console.error("      ตรวจไฟล์ .env (DB_HOST/DB_USER/DB_PASSWORD/DB_NAME) และว่า MySQL รันอยู่");
+    process.exit(1);
+  }
+
+  server.listen(PORT, async () => {
+    const users = await countUsers();
+    console.log("--------------------------------------------------");
+    console.log("  Tarmtid.com พร้อมใช้งาน");
+    console.log("  เปิดเบราว์เซอร์ที่  http://localhost:" + PORT);
+    console.log("  ฐานข้อมูล MySQL ที่  " + DB.host + ":" + DB.port + "/" + DB_NAME);
+    console.log(users === 0
+      ? "  ยังไม่มีผู้ใช้: สร้างบัญชีแรกผ่าน API POST /api/auth/register (บัญชีแรกได้สิทธิ์ admin)"
+      : "  มีผู้ใช้ในระบบแล้ว " + users + " บัญชี");
+    console.log("--------------------------------------------------");
+  });
+})();

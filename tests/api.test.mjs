@@ -5,16 +5,27 @@
  */
 import { spawn } from "node:child_process";
 import http from "node:http";
-import fs from "node:fs";
-import path from "node:path";
+import mysql from "mysql2/promise";
+import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 3999;
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DB_REL = "data/api-test.sqlite";
-const DB_ABS = path.join(ROOT, DB_REL);
+const TEST_DB = "cmr_test_api";
 const B = `http://localhost:${PORT}`;
+
+/** ลบ database ชั่วคราวของรอบก่อน — server.js จะสร้างใหม่เองตอนเริ่ม */
+async function resetDb() {
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    port: Number(process.env.DB_PORT) || 3306
+  });
+  await conn.query("DROP DATABASE IF EXISTS `" + TEST_DB + "`");
+  await conn.end();
+}
 let AUTH = ""; // session cookie ของ admin สำหรับชุดทดสอบนี้
 let passed = 0;
 let failed = 0;
@@ -64,13 +75,11 @@ function rawGet(rawPath) {
 }
 
 console.log("เริ่มทดสอบ API …");
-/* ใช้ฐานข้อมูลชั่วคราวเสมอ เพื่อไม่ให้แตะข้อมูลจริง */
-for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-  if (fs.existsSync(f)) fs.rmSync(f);
-}
+/* ใช้ database ชั่วคราวเสมอ เพื่อไม่ให้แตะข้อมูลจริง */
+await resetDb();
 const server = spawn(process.execPath, ["server.js"], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), CMR_DB_FILE: DB_REL },
+  env: { ...process.env, PORT: String(PORT), CMR_DB_NAME: TEST_DB },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let serverLog = "";
@@ -165,9 +174,7 @@ try {
   try { server.stdout?.destroy(); server.stderr?.destroy(); } catch { /* noop */ }
   server.kill();
   await sleep(300);
-  for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-    if (fs.existsSync(f)) fs.rmSync(f);
-  }
+  try { await resetDb(); } catch { /* noop */ }
 }
 
 console.log(`\nผลลัพธ์: ผ่าน ${passed} · ไม่ผ่าน ${failed}`);

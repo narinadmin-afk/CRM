@@ -57,7 +57,7 @@ function updateStorageBadge() {
   if (!store) return;
   badge.classList.remove("api", "local");
   badge.classList.add(store.kind);
-  label.textContent = store.kind === "api" ? "API + SQLite" : "localStorage";
+  label.textContent = store.kind === "api" ? "API + MySQL" : "localStorage";
   badge.title = store.label;
 }
 

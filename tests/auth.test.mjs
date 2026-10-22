@@ -1,7 +1,7 @@
 /**
  * ทดสอบระบบ Login/Register + สิทธิ์ผู้ใช้ (admin / member / viewer)
  * รัน:  node tests/auth.test.mjs
- * ใช้ฐานข้อมูลชั่วคราว data/auth-test.sqlite และพอร์ต 3997 แล้วปิดเอง
+ * ใช้ database ชั่วคราว cmr_test_auth และพอร์ต 3997 แล้วปิดเอง
  *
  * ครอบคลุม:
  *  - บัญชีแรก = admin อัตโนมัติ, บัญชีถัดไป = member
@@ -12,16 +12,26 @@
  *  - กฎเซฟ: ลบตัวเองไม่ได้, ถอด admin คนสุดท้ายไม่ได้, ระงับบัญชี = เด้งออกทันที
  */
 import { spawn } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
+import mysql from "mysql2/promise";
+import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const PORT = 3997;
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DB_REL = "data/auth-test.sqlite";
-const DB_ABS = path.join(ROOT, DB_REL);
+const TEST_DB = "cmr_test_auth";
 const B = `http://localhost:${PORT}`;
+
+async function resetDb() {
+  const conn = await mysql.createConnection({
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    port: Number(process.env.DB_PORT) || 3306
+  });
+  await conn.query("DROP DATABASE IF EXISTS `" + TEST_DB + "`");
+  await conn.end();
+}
 
 let passed = 0;
 let failed = 0;
@@ -47,14 +57,12 @@ async function register(username, display_name, password = "secret123") {
   return raw("POST", "/api/auth/register", { username, display_name, password });
 }
 
-for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-  if (fs.existsSync(f)) fs.rmSync(f);
-}
+await resetDb();
 
 console.log("เริ่มทดสอบระบบผู้ใช้และสิทธิ์ …");
 const server = spawn(process.execPath, ["server.js"], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), CMR_DB_FILE: DB_REL },
+  env: { ...process.env, PORT: String(PORT), CMR_DB_NAME: TEST_DB },
   stdio: ["ignore", "pipe", "pipe"]
 });
 server.stdout.on("data", () => {});
@@ -218,9 +226,7 @@ try {
   try { server.stdout?.destroy(); server.stderr?.destroy(); } catch { /* noop */ }
   server.kill();
   await sleep(300);
-  for (const f of [DB_ABS, DB_ABS + "-wal", DB_ABS + "-shm"]) {
-    if (fs.existsSync(f)) fs.rmSync(f);
-  }
+  try { await resetDb(); } catch { /* noop */ }
 }
 
 console.log(`\nผลลัพธ์: ผ่าน ${passed} · ไม่ผ่าน ${failed}`);

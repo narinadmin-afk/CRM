@@ -1,6 +1,6 @@
 /* ============================================================
    CMR Base — ชั้นเก็บข้อมูลแบบสลับได้ (Storage adapter)
-   - ApiStore    : คุยกับ REST API ของ server.js (SQLite)
+   - ApiStore    : คุยกับ REST API ของ server.js (MySQL)
    - LocalStore : เก็บใน localStorage ของเบราว์เซอร์
    ทั้งสองตัวมี interface เดียวกัน จึงสลับได้โดยไม่ต้องแก้ UI
    ============================================================ */
@@ -106,7 +106,7 @@ function createApiStore() {
 
   return {
     kind: "api",
-    label: "REST API + SQLite (เซิร์ฟเวอร์)",
+    label: "REST API + MySQL (เซิร์ฟเวอร์)",
     async init() {
       const [schema, records] = await Promise.all([
         req("GET", "/api/app"),

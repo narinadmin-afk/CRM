@@ -22,8 +22,11 @@ node server.js
 แล้วเปิดเบราว์เซอร์ที่ **http://localhost:3000**
 
 - เปลี่ยนพอร์ต: `PORT=3001 node server.js`
-- ข้อมูลถูกเก็บลงฐานข้อมูล SQLite ที่ `data/cmr.sqlite` (ใช้ `node:sqlite` ที่มากับ Node ≥ 22.5)
-- อยากชี้ไปฐานข้อมูลอื่น (เช่น ตอนทดสอบ): `CMR_DB_FILE=data/other.sqlite node server.js`
+- ข้อมูลถูกเก็บลงฐานข้อมูล **MySQL** (ฐานข้อมูล `cmr` — ดู/แก้ข้อมูลผ่าน phpMyAdmin ได้)
+- ตั้งค่าการเชื่อมต่อในไฟล์ `.env` (คัดลอกจาก `.env.example` แล้วเติมค่าของคุณ):
+  `DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` / `DB_PORT`
+- อยากชี้ไปฐานข้อมูลอื่น (เช่น ตอนทดสอบ): `CMR_DB_NAME=other_db node server.js`
+- โครงสร้างตารางอยู่ที่ `sql/schema.mysql.sql` (เซิร์ฟเวอร์สร้างให้อัตโนมัติตอนเริ่ม)
 - ครั้งแรกที่รันจะเติมข้อมูลลูกค้าตัวอย่างภาษาไทยให้อัตโนมัติ 16 ระเบียน
 - **สร้างบัญชีแรกผ่าน API**: เมื่อยังไม่มีผู้ใช้ ให้เรียก `POST /api/auth/register`
   (บัญชีแรกได้สิทธิ์ `admin` อัตโนมัติ) หลังจากนั้นเพิ่มผู้ใช้ต่อได้ในหน้า **จัดการผู้ใช้** — หน้าเว็บมีเฉพาะหน้าเข้าสู่ระบบ
@@ -32,13 +35,13 @@ node server.js
 
 | โหมด | เงื่อนไข | ข้อมูลอยู่ที่ |
 |---|---|---|
-| **API + SQLite** | เปิดผ่าน `node server.js` (ค่าเริ่มต้น ระบบเลือกให้อัตโนมัติ) | `data/cmr.sqlite` แชร์กันได้ทุกเครื่องในเครือข่าย |
+| **API + MySQL** | เปิดผ่าน `node server.js` (ค่าเริ่มต้น ระบบเลือกให้อัตโนมัติ) | ฐานข้อมูล MySQL `cmr` แชร์กันได้ทุกเครื่องในเครือข่าย + ดูผ่าน phpMyAdmin ได้ |
 | **localStorage** | เปิด `index.html` ตรง ๆ (file://) หรือใส่ `?storage=local` | เบราว์เซอร์เครื่องเดียว ไม่ต้องมีเซิร์ฟเวอร์ |
 
 บาร์สถานะที่มุมล่างซ้ายของsidebar บอกว่าตอนนี้ใช้โหมดไหน
 ทั้งสองโหมดใช้ interface ชุดเดียวกันใน [js/store.js](js/store.js) จึงเพิ่ม storage ใหม่ได้โดยไม่ต้องแก้ UI
 
-> หมายเหตุ: ระบบผู้ใช้/สิทธิ์ทำงานเฉพาะโหมด **API + SQLite** เพราะโหมด localStorage
+> หมายเหตุ: ระบบผู้ใช้/สิทธิ์ทำงานเฉพาะโหมด **API + MySQL** เพราะโหมด localStorage
 > เป็นคนละเครื่องคนละเบราว์เซอร์ (โหมดนั้นจึงใช้สิทธิ์เต็มรูปแบบและซ่อนเมนูผู้ใช้)
 
 ---
@@ -149,11 +152,13 @@ js/auth.js          apiFetch + Auth (login/logout/จัดการผู้ใ
 js/store.js         ชั้นเก็บข้อมูล: LocalStorageStore / ApiStore (เลือกอัตโนมัติ)
 js/app.js           router + ทุกมุมมอง (login, users, dashboard, records, kanban, detail, form, settings)
 shared/seed.js      schema เริ่มต้น + ข้อมูลตัวอย่าง (ใช้ร่วม browser/server)
-server.js           Node http server: เสิร์ฟไฟล์ + REST API + SQLite + auth/สิทธิ์
+.env                ค่าเชื่อมต่อ MySQL (ไม่ถูก commit ลง git)
+server.js           Node http server: เสิร์ฟไฟล์ + REST API + MySQL + auth/สิทธิ์
+sql/schema.mysql.sql  โครงสร้างฐานข้อมูล (meta/records/users/sessions)
 tests/api.test.mjs        ชุดทดสอบ REST API (24 assertions)
 tests/auth.test.mjs       ชุดทดสอบ Login/Register + ตารางสิทธิ์ (46 assertions)
 tests/lifecycle.test.mjs  ชุดทดสอบพฤติกรรมระเบียนตลอดชีวิต + รีสตาร์ทเซิร์ฟ (27 assertions)
-data/cmr.sqlite     ฐานข้อมูล (สร้างอัตโนมัติ)
+data/cmr.sqlite     สำเนาฐานข้อมูลเดิม (ก่อนย้ายมา MySQL เก็บไว้อ้างอิง)
 ```
 
 ## คำสั่งตรวจสอบ
@@ -166,9 +171,9 @@ npm run test:lifecycle  # ทดสอบพฤติกรรมจริง: �
 npm run test:all        # รันทั้งสามชุด (97 assertions)
 ```
 
-ทั้งสามชุดรันบนเซิร์ฟเวอร์ชั่วคราว (พอร์ต 3999 / 3997 / 3998) โดยใช้ฐานข้อมูลชั่วคราว
-d้วย `CMR_DB_FILE=data/*-test.sqlite` แล้วลบไฟล์ทิ้งตอนจบ
-⇒ จบด้วยข้อมูลจริงใน `data/cmr.sqlite` คงเดิม 100%
+ทั้งสามชุดรันบนเซิร์ฟเวอร์ชั่วคราว (พอร์ต 3999 / 3997 / 3998) โดยใช้ database ชั่วคราว
+`cmr_test_api` / `cmr_test_auth` / `cmr_test_lifecycle` แล้ว DROP ทิ้งตอนจบ
+⇒ จบด้วยข้อมูลจริงในฐาน `cmr` คงเดิม 100%
 
 ## แนวทางต่อยอด
 
