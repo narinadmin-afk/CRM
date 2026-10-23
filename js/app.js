@@ -11,6 +11,7 @@ let state = {
   view: localStorage.getItem("cmr_view") || "list",
   search: "",
   filters: { status: "", owner: "" },
+  dashFilters: { owner: "", status: "", follow: "", customer: "" },
   sort: { key: "__updated", dir: "desc" },
   dragId: null
 };
@@ -293,13 +294,42 @@ function visibleRecords() {
 }
 
 /* ================= dashboard ================= */
+const DASH_OWNER_ALL = "งานของแต่ละคนทั้งหมด";
+const DASH_STATUS_ALL = "ทุกสถานะ";
+const DASH_FOLLOW_ALL = "นัดหมายทั้งหมด";
+const DASH_CUSTOMER_ALL = "ลูกค้าทั้งหมด";
+const DASH_FOLLOW_OPTIONS = [
+  DASH_FOLLOW_ALL, "ภายใน 7 วัน", "ภายใน 30 วัน", "ภายใน 90 วัน", "เลยกำหนด", "ไม่มีนัดหมาย"
+];
+
+/** กรองตามตัวเลือกดรอปดาว "นัดหมายครั้งถัดไป" */
+function matchDashFollow(rec, follow, today) {
+  if (!follow || follow === DASH_FOLLOW_ALL) return true;
+  const d = rec.values.next_followup;
+  if (follow === "ไม่มีนัดหมาย") return !d;
+  if (!d) return false;
+  if (follow === "เลยกำหนด") return d < today;
+  const days = Number((String(follow).match(/\d+/) || [0])[0]);
+  const until = new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+  return d >= today && d <= until;
+}
+
 function viewDashboard() {
-  const recs = state.records;
+  const df = state.dashFilters;
+  const today = new Date().toISOString().slice(0, 10);
+  /* กรองด้วย 4 ดรอปดาวก่อน แล้วค่อยคำนวณทุกส่วนของหน้า */
+  const recs = state.records.filter((r) => {
+    if (df.owner && r.values.owner !== df.owner) return false;
+    if (df.status && r.values.status !== df.status) return false;
+    if (df.customer && recordTitle(r) !== df.customer) return false;
+    return matchDashFollow(r, df.follow, today);
+  });
+  const customers = [...new Set(state.records.map((r) => recordTitle(r)))]
+    .sort((a, b) => String(a).localeCompare(String(b), "th"));
   const wonStatuses = ["ปิดการขาย", "ลูกค้าประจำ"];
   const valueOf = (r) => Number(r.values.deal_value) || 0;
   const totalValue = recs.reduce((s, r) => s + valueOf(r), 0);
   const wonValue = recs.filter((r) => wonStatuses.includes(r.values.status)).reduce((s, r) => s + valueOf(r), 0);
-  const today = new Date().toISOString().slice(0, 10);
   const soon = recs.filter((r) => r.values.next_followup && r.values.next_followup >= today)
     .sort((a, b) => a.values.next_followup.localeCompare(b.values.next_followup));
 
@@ -381,13 +411,27 @@ function viewDashboard() {
     )
   );
 
+  /* 4 ดรอปดาวกรองแดชบอร์ด (แทนปุ่มเพิ่มระเบียน) */
+  const dashControls = h("div", { class: "row" },
+    selectControl(df.owner, [DASH_OWNER_ALL, ...optionsFor("owner")], (v) => {
+      state.dashFilters.owner = v === DASH_OWNER_ALL ? "" : v; render();
+    }),
+    selectControl(df.status, [DASH_STATUS_ALL, ...statusOptions()], (v) => {
+      state.dashFilters.status = v === DASH_STATUS_ALL ? "" : v; render();
+    }),
+    selectControl(df.follow, DASH_FOLLOW_OPTIONS, (v) => {
+      state.dashFilters.follow = v === DASH_FOLLOW_ALL ? "" : v; render();
+    }),
+    selectControl(df.customer, [DASH_CUSTOMER_ALL, ...customers], (v) => {
+      state.dashFilters.customer = v === DASH_CUSTOMER_ALL ? "" : v; render();
+    })
+  );
+
   return h("div", {},
     topbar({
       title: "แดชบอร์ด",
       sub: "ภาพรวมข้อมูลลูกค้า · อัปเดต " + fmtDateTime(Date.now()),
-      right: [
-        perms().canWrite ? h("button", { class: "btn primary", onclick: () => go("#/form/new") }, "+ เพิ่มระเบียน") : null
-      ]
+      right: [dashControls]
     }),
     h("div", { class: "page" },
       kpis,
