@@ -39,7 +39,7 @@ async function boot() {
     state.user = null;
     state.schema = null;
     state.records = [];
-    toast("เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่", "error");
+    toast(tA("sessionExpired"), "error");
     go("#/login");
   });
   route();
@@ -83,6 +83,11 @@ function bindSidebar() {
     if (fileInput.files && fileInput.files[0]) await handleCsvFile(fileInput.files[0]);
     fileInput.value = "";
   });
+  /* เมนูสลับภาษาใน sidebar (ใช้ component เดียวกับหน้า login) */
+  const langBox = $("#sidebar-lang");
+  if (langBox && !langBox.childElementCount && typeof langMenu === "function") {
+    langBox.append(langMenu());
+  }
 }
 
 /* ================= router ================= */
@@ -178,9 +183,8 @@ function route() {
   /* เมนูย่อยใบเสนอราคา */
   let subKey = "";
   if (state.route.name === "quot-list") {
-    const st = state.route.query && state.route.query.status;
-    subKey = st ? "quotations-" + String(st).toLowerCase() : "quotations-list";
-    if (!["quotations-draft", "quotations-sent", "quotations-approved", "quotations-expired"].includes(subKey)) subKey = "quotations-list";
+    /* ตัวกรองสถานะใน URL ไม่มีเมนูย่อยแล้ว → ไฮไลต์ “รายการทั้งหมด” เสมอ */
+    subKey = "quotations-list";
   } else if (state.route.name === "quot-new") subKey = "quotations-new";
   else if (state.route.name === "quot-settings") subKey = "quotations-settings";
   else if (state.route.name === "quotations") subKey = "quotations";
@@ -229,6 +233,8 @@ function render() {
   const main = $("#main");
   fill(main);
   document.body.classList.toggle("auth-mode", isAuthRoute());
+  document.title = isAuthRoute() ? tA("docTitle") : (typeof T === "function" ? T(DEFAULT_DOC_TITLE) : DEFAULT_DOC_TITLE);
+  document.documentElement.lang = typeof curLang === "function" ? curLang() : "th";
   switch (state.route.name) {
     case "login": main.append(viewLogin()); break;
     case "dashboard": main.append(viewDashboard()); break;
@@ -252,6 +258,7 @@ function render() {
     case "products": main.append(viewProducts()); break;
     default: main.append(viewDashboard());
   }
+  if (typeof translateDOM === "function") translateDOM(document.body);
   window.scrollTo({ top: 0 });
 }
 
@@ -587,11 +594,13 @@ function renderRecordsBody() {
       h("p", {}, filtering ? "ลองเปลี่ยนคำค้นหาหรือตัวกรอง" : "เริ่มต้นด้วยการเพิ่มระเบียนแรก หรือนำเข้าจากไฟล์ CSV"),
       perms().canWrite ? h("button", { class: "btn primary", onclick: () => go("#/form/new") }, "+ เพิ่มระเบียน") : null
     ));
+    if (typeof translateDOM === "function") translateDOM(root);
     return;
   }
 
   if (state.view === "grid") root.append(renderGrid(list));
   else root.append(renderTable(list));
+  if (typeof translateDOM === "function") translateDOM(root);
 }
 
 function tableColumns() {
@@ -697,7 +706,7 @@ function viewPipeline() {
 
   return h("div", {},
     topbar({
-      title: "สถานะ",
+      title: h("span", { "data-t": "navPipeline" }, "สถานะ"),
       sub: "ลากการ์ดไปมาระหว่างคอลัมน์เพื่อเปลี่ยนสถานะ (ลากได้เฉพาะเมื่อใช้ร่วมกับเซิร์ฟเวอร์หรือเบราว์เซอร์เครื่องเดียว)"
     }),
     h("div", { class: "page" }, board)
@@ -1382,12 +1391,111 @@ async function importRows(mapping, dataRows) {
 }
 
 /* ================= auth views ================= */
+/* ---------- ภาษาหน้าเข้าสู่ระบบ (th / en / zh) ---------- */
+const AUTH_LANGS = ["th", "en", "zh"];
+const AUTH_LANG_NAME = { th: "ไทย", en: "English", zh: "中文" };
+const AUTH_LANG_SHORT = { th: "ไทย", en: "EN", zh: "中文" };
+const DEFAULT_DOC_TITLE = "Qwikflow CRM — ระบบจัดการลูกค้า";
+const AUTH_I18N = {
+  th: {
+    docTitle: DEFAULT_DOC_TITLE,
+    brandSub: "ระบบจัดการลูกค้า",
+    title: "เข้าสู่ระบบ",
+    sub: "กรอกชื่อผู้ใช้และรหัสผ่านเพื่อใช้งานระบบ",
+    username: "ชื่อผู้ใช้",
+    password: "รหัสผ่าน",
+    submit: "เข้าสู่ระบบ",
+    fillBoth: "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน",
+    welcome: "เข้าสู่ระบบสำเร็จ สวัสดี ",
+    sessionExpired: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่",
+    errors: {
+      "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง": "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
+      "บัญชีนี้ถูกระงับการใช้งาน": "บัญชีนี้ถูกระงับการใช้งาน",
+      "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้": "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"
+    }
+  },
+  en: {
+    docTitle: "Qwikflow CRM — Customer Management",
+    brandSub: "Customer Management",
+    title: "Sign in",
+    sub: "Enter your username and password to continue",
+    username: "Username",
+    password: "Password",
+    submit: "Sign in",
+    fillBoth: "Please enter username and password",
+    welcome: "Signed in — welcome, ",
+    sessionExpired: "Session expired. Please sign in again.",
+    errors: {
+      "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง": "Incorrect username or password",
+      "บัญชีนี้ถูกระงับการใช้งาน": "This account has been suspended",
+      "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้": "Cannot connect to the server"
+    }
+  },
+  zh: {
+    docTitle: "Qwikflow CRM — 客户管理系统",
+    brandSub: "客户管理系统",
+    title: "登录",
+    sub: "请输入用户名和密码以使用系统",
+    username: "用户名",
+    password: "密码",
+    submit: "登录",
+    fillBoth: "请输入用户名和密码",
+    welcome: "登录成功，欢迎您 ",
+    sessionExpired: "登录已过期，请重新登录",
+    errors: {
+      "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง": "用户名或密码不正确",
+      "บัญชีนี้ถูกระงับการใช้งาน": "该账户已被停用",
+      "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้": "无法连接服务器"
+    }
+  }
+};
+
+function authLang() {
+  const saved = localStorage.getItem("cmr_lang");
+  return AUTH_LANGS.includes(saved) ? saved : "th";
+}
+function tA(key) { return (AUTH_I18N[authLang()] || AUTH_I18N.th)[key]; }
+/** แปลข้อความ error ที่เซิร์ฟเวอร์ส่งมาเป็นภาษาไทย ตามภาษาที่ผู้ใช้เลือก */
+function tAuthErr(msg) {
+  const map = (AUTH_I18N[authLang()] || AUTH_I18N.th).errors;
+  return map[msg] || msg;
+}
+
+/** ปุ่มเมนูสลับภาษา (ไทย / English / 中文) — ใช้บนหน้า Login */
+let openLangMenu = null;
+document.addEventListener("click", () => {
+  if (openLangMenu) { openLangMenu.hidden = true; openLangMenu = null; }
+});
+function langMenu() {
+  const cur = authLang();
+  const menu = h("div", { class: "lang-menu", hidden: true },
+    AUTH_LANGS.map((code) => h("button", {
+      class: "lang-item" + (code === cur ? " active" : ""), type: "button",
+      onclick: (e) => {
+        e.stopPropagation();
+        localStorage.setItem("cmr_lang", code);
+        openLangMenu = null;
+        render();
+      }
+    }, AUTH_LANG_NAME[code]))
+  );
+  const btn = h("button", { class: "lang-btn", type: "button", title: "Language / ภาษา" },
+    "🌐 " + AUTH_LANG_SHORT[cur]);
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    openLangMenu = menu.hidden ? null : menu;
+  });
+  return h("div", { class: "lang-switch" }, btn, menu);
+}
+
 function authShell(title, sub, form, footerNote) {
   return h("div", { class: "auth-page" },
     h("div", { class: "auth-card card" },
+      langMenu(),
       h("div", { class: "auth-brand" },
         h("div", { class: "brand-mark" }),
-        h("div", {}, h("strong", {}, "Qwikflow CRM"), h("span", {}, "ระบบจัดการลูกค้า"))
+        h("div", {}, h("strong", {}, "Qwikflow CRM"), h("span", {}, tA("brandSub")))
       ),
       h("h2", {}, title),
       p2(sub),
@@ -1416,34 +1524,34 @@ function showAuthError(box, msg) {
 }
 
 function viewLogin() {
-  const userInp = h("input", { type: "text", autocomplete: "username", placeholder: "ชื่อผู้ใช้", required: true });
-  const passInp = h("input", { type: "password", autocomplete: "current-password", placeholder: "รหัสผ่าน", required: true });
+  const userInp = h("input", { type: "text", autocomplete: "username", placeholder: tA("username"), required: true });
+  const passInp = h("input", { type: "password", autocomplete: "current-password", placeholder: tA("password"), required: true });
   const err = authErrorBox();
-  const submit = h("button", { class: "btn primary block", type: "submit" }, "เข้าสู่ระบบ");
+  const submit = h("button", { class: "btn primary block", type: "submit" }, tA("submit"));
 
   const form = h("form", { class: "auth-form", onsubmit: async (e) => {
     e.preventDefault();
     showAuthError(err, "");
-    if (!userInp.value.trim() || !passInp.value) { showAuthError(err, "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน"); return; }
+    if (!userInp.value.trim() || !passInp.value) { showAuthError(err, tA("fillBoth")); return; }
     submit.disabled = true;
     try {
       state.user = await Auth.login(userInp.value.trim(), passInp.value);
       await loadData();
-      toast("เข้าสู่ระบบสำเร็จ สวัสดี " + state.user.display_name, "success");
+      toast(tA("welcome") + state.user.display_name, "success");
       go("#/dashboard");
     } catch (ex) {
-      showAuthError(err, ex.message);
+      showAuthError(err, tAuthErr(ex.message));
     } finally {
       submit.disabled = false;
     }
   } },
-    authField("ชื่อผู้ใช้", userInp),
-    authField("รหัสผ่าน", passInp),
+    authField(tA("username"), userInp),
+    authField(tA("password"), passInp),
     err,
     submit
   );
 
-  return authShell("เข้าสู่ระบบ", "กรอกชื่อผู้ใช้และรหัสผ่านเพื่อใช้งานระบบ", form);
+  return authShell(tA("title"), tA("sub"), form);
 }
 
 /* ================= users view (admin) ================= */

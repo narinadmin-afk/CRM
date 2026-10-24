@@ -29,20 +29,16 @@
           <span class="nav-ico">☰</span> รายชื่อลูกค้า
         </a>
         <a class="nav-item" href="#/pipeline" data-route="pipeline">
-          <span class="nav-ico"> ⇄</span> สถานะ
+          <span class="nav-ico"> ⇄</span> <span data-t="navPipeline">สถานะ</span>
         </a>
         <a class="nav-item" href="#/quotations" data-route="quotations" id="nav-quotations">
           <span class="nav-ico">📄</span> ใบเสนอราคา
           <span class="nav-caret" aria-hidden="true">▾</span>
         </a>
         <div class="nav-sub" id="nav-quotations-sub">
+          <a class="nav-sub-item" href="#/quotations/new" data-route="quotations-new">+ สร้างใหม่</a>
           <a class="nav-sub-item" href="#/quotations" data-route="quotations">ภาพรวม</a>
           <a class="nav-sub-item" href="#/quotations/list" data-route="quotations-list">รายการทั้งหมด</a>
-          <a class="nav-sub-item" href="#/quotations/new" data-route="quotations-new">+ สร้างใหม่</a>
-          <a class="nav-sub-item" href="#/quotations/list?status=Draft" data-route="quotations-draft">ฉบับร่าง</a>
-          <a class="nav-sub-item" href="#/quotations/list?status=Sent" data-route="quotations-sent">ส่งให้ลูกค้าแล้ว</a>
-          <a class="nav-sub-item" href="#/quotations/list?status=Approved" data-route="quotations-approved">อนุมัติแล้ว</a>
-          <a class="nav-sub-item" href="#/quotations/list?status=Expired" data-route="quotations-expired">หมดอายุ</a>
           <a class="nav-sub-item" href="#/quotations/settings" data-route="quotations-settings">⚙ ตั้งค่าเอกสาร</a>
         </div>
         <a class="nav-item" href="#/products" data-route="products" id="nav-products">
@@ -72,6 +68,7 @@
           <button class="link-btn" id="btn-export-side">ส่งออก CSV</button>
           <button class="link-btn" id="btn-import-side">นำเข้า CSV</button>
         </div>
+        <div id="sidebar-lang"></div>
       </div>
     </aside>
 
@@ -84,6 +81,7 @@
 
   <script src="shared/seed.js"></script>
   <script src="shared/quotation.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/csv.js"></script>
   <script src="js/auth.js"></script>

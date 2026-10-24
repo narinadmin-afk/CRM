@@ -676,6 +676,31 @@ body.auth-mode .sidebar { display: none; }
 .auth-brand strong { display: block; font-size: 15px; }
 .auth-brand span { font-size: 11.5px; color: var(--text-2); }
 .auth-form { display: flex; flex-direction: column; gap: 4px; }
+/* ---- ปุ่มเมนูสลับภาษาบนหน้า Login ---- */
+.lang-switch { position: relative; display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.lang-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text-2); border-radius: 999px;
+  padding: 4px 12px; font-size: 12.5px; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.lang-btn:hover { border-color: var(--primary); color: var(--primary); }
+.lang-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-lg);
+  padding: 5px; min-width: 150px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.lang-menu[hidden] { display: none; }
+.lang-item {
+  border: 0; background: transparent; text-align: left;
+  padding: 8px 10px; border-radius: 7px; font-size: 13px;
+  color: var(--text); cursor: pointer; transition: background .12s;
+}
+.lang-item:hover { background: var(--primary-soft); }
+.lang-item.active { background: var(--primary-soft); color: var(--primary-dark); font-weight: 600; }
 .auth-foot { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
 .auth-hint {
   background: #fffbeb;

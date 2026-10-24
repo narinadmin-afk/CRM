@@ -43,6 +43,7 @@ function toast(message, type = "") {
   const root = document.getElementById("toast-root");
   const t = h("div", { class: "toast " + type }, message);
   root.append(t);
+  if (typeof translateDOM === "function") translateDOM(t);
   setTimeout(() => {
     t.style.transition = "opacity .3s, transform .3s";
     t.style.opacity = "0";
@@ -68,6 +69,7 @@ function openModal({ title, body, footer, wide }) {
   );
   if (footer) box.append(h("div", { class: "modal-foot" }, footer));
   root.append(backdrop);
+  if (typeof translateDOM === "function") translateDOM(root);
   const onKey = (e) => { if (e.key === "Escape") { closeModal(); document.removeEventListener("keydown", onKey); } };
   document.addEventListener("keydown", onKey);
   backdrop.dataset.keyHandler = "1";
@@ -96,26 +98,27 @@ function confirmDialog(message, { danger = false, okText = "ยืนยัน" 
 /* ---------- formatting ---------- */
 function fmtNumber(n) {
   if (n === "" || n === null || n === undefined || isNaN(Number(n))) return "";
-  return Number(n).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  return Number(n).toLocaleString(typeof i18nLocale === "function" ? i18nLocale() : "th-TH", { maximumFractionDigits: 2 });
 }
 
 function fmtMoney(n) {
   if (n === "" || n === null || n === undefined || isNaN(Number(n))) return "—";
-  return Number(n).toLocaleString("th-TH", { maximumFractionDigits: 0 }) + " ฿";
+  return Number(n).toLocaleString(typeof i18nLocale === "function" ? i18nLocale() : "th-TH", { maximumFractionDigits: 0 }) + " ฿";
 }
 
 function fmtDate(v) {
   if (!v) return "";
   const d = typeof v === "number" ? new Date(v) : new Date(v + "T00:00:00");
   if (isNaN(d)) return String(v);
-  return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString(typeof i18nLocale === "function" ? i18nLocale() : "th-TH", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function fmtDateTime(ts) {
   if (!ts) return "";
+  const loc = typeof i18nLocale === "function" ? i18nLocale() : "th-TH";
   const d = new Date(ts);
-  return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) +
-    " " + d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(loc, { day: "numeric", month: "short", year: "numeric" }) +
+    " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
 }
 
 function relTime(ts) {
