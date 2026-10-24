@@ -103,15 +103,10 @@ function quoErrCard(e) {
 function viewQuotations() {
   const root = h("div", {});
 
-  const newBtn = perms().canWrite
-    ? h("button", { class: "btn primary", onclick: () => go("#/quotations/new") }, "+ สร้างใบเสนอราคาใหม่")
-    : null;
-
   root.append(
     topbar({
       title: "ภาพรวมใบเสนอราคา",
-      sub: "สถิติและเอกสารล่าสุด · อัปเดต " + fmtDateTime(Date.now()),
-      right: [newBtn]
+      sub: "สถิติและเอกสารล่าสุด · อัปเดต " + fmtDateTime(Date.now())
     }),
     h("div", { class: "page", id: "quo-overview-body" },
       h("div", { class: "card empty" }, h("p", { class: "muted" }, "กำลังโหลดข้อมูล…")))
@@ -159,7 +154,7 @@ function viewQuotations() {
               h("td", {}, quoStatusPill(q.status)),
               h("td", {}, q.owner || "—")
             )))))
-        : h("p", { class: "muted mb0" }, "ยังไม่มีใบเสนอราคา — กด “+ สร้างใบเสนอราคาใหม่” เพื่อเริ่มต้น");
+        : h("p", { class: "muted mb0" }, "ยังไม่มีใบเสนอราคา — ใช้เมนู “+ สร้างใหม่” ในเมนูย่อยด้านซ้ายเพื่อเริ่มต้น");
 
       fill(box,
         kpis,
@@ -234,10 +229,7 @@ function viewQuotationsList(query) {
     topbar({
       title: "รายการใบเสนอราคา",
       sub: "ค้นหา เรียงลำดับ และจัดการเอกสารทั้งหมด",
-      right: [
-        controls,
-        perms().canWrite ? h("button", { class: "btn primary", onclick: () => go("#/quotations/new") }, "+ สร้างใหม่") : null
-      ]
+      right: [controls]
     }),
     h("div", { class: "page" }, body)
   );
@@ -272,8 +264,7 @@ function quoListTable(data) {
   if (!data.items.length) {
     frag.append(quoEmptyCard(
       filtering ? "ไม่พบเอกสารที่ค้นหา" : "ยังไม่มีใบเสนอราคา",
-      filtering ? "ลองเปลี่ยนคำค้นหาหรือตัวกรอง" : "เริ่มต้นด้วยการสร้างใบเสนอราคาฉบับแรก",
-      perms().canWrite ? [h("button", { class: "btn primary", onclick: () => go("#/quotations/new") }, "+ สร้างใบเสนอราคาใหม่")] : []
+      filtering ? "ลองเปลี่ยนคำค้นหาหรือตัวกรอง" : "เริ่มต้นได้จากเมนู “+ สร้างใหม่” ในเมนูย่อยด้านซ้าย"
     ));
     return frag;
   }
@@ -579,20 +570,20 @@ function buildQuotationForm(root, { editing, quotation, items, settings, product
     discType.value = it.discount_type || "";
     const discInp = h("input", {
       type: "number", min: "0", step: "any", value: it.discount_value ?? "", placeholder: "0",
-      style: { width: "70px" }, disabled: !it.discount_type,
+      disabled: !it.discount_type,
       oninput: (e) => { it.discount_value = e.target.value; recalc(); },
       onchange: (e) => { discInp.disabled = !it.discount_type; }
     });
     discType.addEventListener("change", () => { discInp.disabled = !it.discount_type; });
-    const taxInp = h("input", { type: "number", min: "0", max: "100", step: "any", value: it.tax_rate ?? 7, style: { width: "56px" }, oninput: (e) => { it.tax_rate = e.target.value; } });
+    const taxInp = h("input", { type: "number", min: "0", max: "100", step: "any", value: it.tax_rate ?? 7, oninput: (e) => { it.tax_rate = e.target.value; } });
     const lineCell = h("td", { class: "num line-total-td" }, "0.00");
     const delBtn = h("button", { class: "icon-btn danger", title: "ลบรายการ", onclick: () => { doc.items.splice(idx, 1); renderItems(); recalc(); } }, "🗑");
 
     return h("tr", {},
       h("td", {}, h("div", { class: "stack-sm" }, codeInp, nameInp, descInp)),
-      h("td", {}, qtyInp, unitInp),
+      h("td", {}, h("div", { class: "cell-pair" }, qtyInp, unitInp)),
       h("td", {}, priceInp),
-      h("td", {}, h("div", { class: "row", style: { gap: "4px" } }, discType, discInp)),
+      h("td", {}, h("div", { class: "cell-pair" }, discType, discInp)),
       h("td", {}, taxInp),
       lineCell,
       h("td", {}, delBtn)

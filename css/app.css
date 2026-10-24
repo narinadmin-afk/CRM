@@ -748,9 +748,24 @@ select.control.sm { padding: 5px 8px; font-size: 13px; border-radius: 7px; }
   background: var(--surface-2); border: 1px dashed var(--border-strong);
   border-radius: 9px; padding: 10px 12px; min-width: 230px;
 }
+/* ตารางรายการในฟอร์ม: คอลัมน์กว้างตายตัว + ช่องกรอกเต็มความกว้าง — ไม่ให้ช่องข้อความเบียดหรือซ้อนทับกัน */
+table.data.quo-items { table-layout: fixed; min-width: 760px; }
+.quo-items th, .quo-items td { white-space: normal; }
 .quo-items td { vertical-align: top; }
-.quo-items input { min-width: 0; }
-.quo-items td:nth-child(2) input, .quo-items td:nth-child(5) input { width: 100%; }
+.quo-items th:nth-child(1) { width: 30%; }   /* สินค้า/บริการ */
+.quo-items th:nth-child(2) { width: 15%; }   /* จำนวน/หน่วย */
+.quo-items th:nth-child(3) { width: 13%; }   /* ราคาต่อหน่วย */
+.quo-items th:nth-child(4) { width: 16%; }   /* ส่วนลด */
+.quo-items th:nth-child(5) { width: 8%; }    /* ภาษี % */
+.quo-items th:nth-child(6) { width: 12%; }   /* ยอดรวม */
+.quo-items th:nth-child(7) { width: 44px; }  /* ปุ่มลบ */
+.quo-items input, .quo-items select { width: 100%; min-width: 0; }
+.quo-items input[type="number"] { text-align: right; }
+.quo-items .cell-pair { display: flex; gap: 6px; align-items: center; }
+.quo-items .cell-pair > * { flex: 1 1 0; min-width: 0; }
+.quo-items td:nth-child(4) .cell-pair > input { flex: 0 0 56px; }
+.quo-items td:nth-child(7) { text-align: center; }
+.quo-items .line-total-td { white-space: nowrap; }
 .line-total-td { font-weight: 700; color: var(--primary-dark); white-space: nowrap; }
 
 /* ---- สรุปยอด + คำอ่านไทย ---- */
