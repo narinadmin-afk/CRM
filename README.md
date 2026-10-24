@@ -98,6 +98,30 @@ node server.js
 - นำเข้า CSV พร้อมหน้าตัวอย่าง 5 แถว และจับคู่คอลัมน์ด้วยชื่อฟิลด์อัตโนมัติ
 - ดาวน์โหลดแม่แบบ CSV
 
+**ระบบใบเสนอราคา (Quotation Management)**
+- เมนู **ใบเสนอราคา** ใน Sidebar พร้อมเมนูย่อย: ภาพรวม, รายการทั้งหมด, สร้างใหม่,
+  ฉบับร่าง, ส่งให้ลูกค้าแล้ว, อนุมัติแล้ว, หมดอายุ, ตั้งค่าเอกสาร
+- **ภาพรวม**: KPI 8 ตัว (จำนวน/ร่าง/ส่งแล้ว/อนุมัติ/รอตอบรับ/หมดอายุ/มูลค่ารวม/มูลค่าอนุมัติ)
+  + รายการล่าสุด + สถิติตามสถานะ — ดึงจาก MySQL จริงทั้งหมด
+- **สร้าง/แก้ไขใบเสนอราคา**: เลขที่อัตโนมัติ `QT-YYYY-NNNN` (atomic counter + UNIQUE constraint
+  สร้างพร้อมกันหลาย ๆ คนไม่ชน), เลือกลูกค้าจากตาราง `records` เดิม (ดึงข้อมูลอัตโนมัติ ไม่สร้างซ้ำ),
+  เพิ่มรายการสินค้าจากคลังหรือพิมพ์เอง (บริการไม่มีรหัสก็ได้), ส่วนลดรายสินค้า + ส่วนลดท้ายเอกสาร,
+  VAT 3 รูปแบบ (ยังไม่รวม / รวมแล้ว / ไม่คิด) ตั้งอัตราได้ — บันทึก snapshot ราคา ณ เวลาสร้างเอกสาร
+- **การคำนวณ**: สูตรเดียวกันทั้งฝั่งเว็บและเซิร์ฟเวอร์ (`shared/quotation.js`) — เซิร์ฟเวอร์คำนวณทับค่าจาก client เสมอ,
+  แสดงจำนวนเงินพร้อมคำอ่านภาษาไทย
+- **สถานะ 7 แบบ** (Draft/Sent/Pending/Approved/Rejected/Expired/Cancelled) พร้อมแผนผังเปลี่ยนสถานะ,
+  บันทึก log ทุกครั้ง, เอกสารอนุมัติแล้วล็อกการแก้ไข (ใช้ทำสำเนาแทน), เลยอายุอัตโนมัติเป็น Expired
+- **หน้ารายการ**: ค้นหาเลขที่/ลูกค้า, กรองสถานะ/ช่วงวันที่, เรียงตามคอลัมน์, แบ่งหน้า,
+  เมนู ดู/แก้ไข/ทำสำเนา/PDF/ยกเลิก/ลบ (ตามสิทธิ์)
+- **PDF**: หน้าตัวอย่างกระดาษ A4 + ปุ่มพิมพ์/บันทึก PDF จากเบราว์เซอร์ (ฟอนต์ Noto Sans Thai,
+  หัวตารางซ้ำทุกหน้า, ลายเซ็น 3 ช่อง, จำนวนเงินภาษาไทย) — ไม่ต้องติดตั้งไลบรารีเพิ่ม
+- **โมดูลสินค้า**: ตาราง `products` + หน้าจัดการสินค้า/บริการ (เลือกใช้ในฟอร์ม, ลบไม่กระทบเอกสารเก่า)
+- **เชื่อม CRM เดิม**: หน้ารายละเอียดลูกค้ามีการ์ด “ประวัติใบเสนอราคา” + ปุ่มสร้างใบเสนอราคาให้ลูกค้ารายนั้น,
+  ทุกเหตุการณ์ (สร้าง/แก้ไข/ส่ง/อนุมัติ/ยกเลิก) ถูกบันทึกลง Activity Timeline ของระเบียนลูกค้า,
+  กันลบลูกค้าที่ยังมีเอกสารอ้างอิง (409)
+- **สิทธิ์**: บังคับที่ Backend — viewer อ่านอย่างเดียว, member สร้าง/แก้ไขของตัวเองและอนุมัติได้,
+  admin จัดการทุกฉบับ + ตั้งค่าเอกสาร (เฉพะ admin)
+
 ---
 
 ## ผู้ใช้และสิทธิ์ (Login)
@@ -146,6 +170,20 @@ node server.js
 | POST | `/api/records/:id/comments` | member/admin | เพิ่มคอมเมนต์ `{ text }` |
 | POST | `/api/records/:id/status` | member/admin* | เปลี่ยนสถานะ `{ status }` |
 | POST | `/api/reset` | admin | ล้างและเติมข้อมูลตัวอย่างใหม่ — เรียกผ่าน API เท่านั้น ไม่มีปุ่มใน UI |
+| GET | `/api/quotations` | สมาชิก | รายการใบเสนอราคา — กรอง `q`/`status`/`from`/`to`/`customer_id`/`owner`, เรียง `sort`/`dir`, แบ่งหน้า `page`/`per_page` |
+| GET | `/api/quotations/stats` | สมาชิก | KPI ภาพรวม: จำนวนตามสถานะ, มูลค่ารวม, มูลค่าที่อนุมัติ |
+| POST | `/api/quotations` | member/admin | สร้างใบเสนอราคา `{ doc, items }` — เซิร์ฟเวอร์คำนวณยอดใหม่ทั้งหมด + สร้างเลข QT-YYYY-NNNN |
+| GET | `/api/quotations/:id` | สมาชิก | รายละเอียด + items + logs |
+| PUT | `/api/quotations/:id` | เจ้าของเอกสาร/admin | แก้ไข (เฉพาะสถานะที่ยังแก้ได้ มิฉะนั้น 409) |
+| POST | `/api/quotations/:id/status` | member/admin | เปลี่ยนสถานะตามแผนผัง rules (409 ถ้าผิดกฎ) |
+| POST | `/api/quotations/:id/duplicate` | member/admin | ทำสำเนาเป็น Draft ใหม่ (เลขใหม่) |
+| DELETE | `/api/quotations/:id` | เจ้าของเอกสาร/admin | ลบเอกสาร (เอกสารอนุมัติแล้วลบเฉพาะ admin) |
+| GET | `/api/products` | สมาชิก | คลังสินค้า/บริการ (ค้นหา `q`) |
+| POST | `/api/products` | member/admin | เพิ่มสินค้า (`code` ห้ามซ้ำ) |
+| PATCH | `/api/products/:id` | member/admin | แก้ไขสินค้า |
+| DELETE | `/api/products/:id` | admin | ลบสินค้า (snapshot ในเอกสารเดิมยังอยู่) |
+| GET | `/api/qsettings` | สมาชิก | ตั้งค่าเอกสาร (โลโก้, ที่อยู่บริษัท, ค่า VAT/อายุเอกสารเริ่มต้น) |
+| PUT | `/api/qsettings` | admin | บันทึกตั้งค่าเอกสาร |
 
 \* ต้องเป็นเจ้าของระเบียน (คนสร้าง) หรือ "ผู้รับผิดชอบ" เว้นแต่เป็น admin
 
@@ -175,14 +213,19 @@ js/ui.js            helper สร้าง DOM, toast, modal, จัดรูป
 js/csv.js           แปลง/สร้าง CSV (รองรับเครื่องหมายคำพูด ขึ้นบรรทัดใหม่ BOM)
 js/auth.js          apiFetch + Auth (login/logout/จัดการผู้ใช้) + ตรวจสอบสิทธิ์ฝั่ง UI
 js/store.js         ชั้นเก็บข้อมูล: LocalStorageStore / ApiStore (เลือกอัตโนมัติ)
+js/quotation.js     โมดูลใบเสนอราคา: ภาพรวม/รายการ/ฟอร์ม/รายละเอียด/ตัวอย่าง A4/ตั้งค่า/คลังสินค้า
 js/app.js           router + ทุกมุมมอง (login, users, dashboard, records, kanban, detail, form, settings)
 shared/seed.js      schema เริ่มต้น + ข้อมูลตัวอย่าง (ใช้ร่วม browser/server)
+shared/quotation.js สูตรคำนวณราคา/สถานะ/คำอ่านเงินไทย (ใช้ร่วม browser/server — ผลลัพธ์ตรงกันเสมอ)
 .env                ค่าเชื่อมต่อ MySQL (ไม่ถูก commit ลง git)
 server.js           Node http server: เสิร์ฟไฟล์ + REST API + MySQL + auth/สิทธิ์
-sql/schema.mysql.sql  โครงสร้างฐานข้อมูล (meta/records/users/sessions)
+sql/schema.mysql.sql  โครงสร้างฐานข้อมูล (meta/records/users/sessions + quotations/quotation_items/
+                     quotation_activity_logs/products — ทุกตาราง CREATE IF NOT EXISTS = migration
+                     รันซ้ำได้ตอน start ไม่ลบข้อมูลเดิม)
 tests/api.test.mjs        ชุดทดสอบ REST API (24 assertions)
 tests/auth.test.mjs       ชุดทดสอบ Login/Register + ตารางสิทธิ์ (46 assertions)
 tests/lifecycle.test.mjs  ชุดทดสอบพฤติกรรมระเบียนตลอดชีวิต + รีสตาร์ทเซิร์ฟ (27 assertions)
+tests/quotation.test.mjs  ชุดทดสอบระบบใบเสนอราคา + คลังสินค้า (74 assertions)
 data/cmr.sqlite     สำเนาฐานข้อมูลเดิม (ก่อนย้ายมา MySQL เก็บไว้อ้างอิง)
 ```
 
@@ -193,12 +236,20 @@ npm run check           # syntax check ทุกไฟล์ JS
 npm test                # ชุดทดสอบ REST API (24 assertions)
 npm run test:auth       # ชุดทดสอบสิทธิ์ผู้ใช้ (46 assertions)
 npm run test:lifecycle  # ทดสอบพฤติกรรมจริง: สร้าง→คอมเมนต์→เปลี่ยนสถานะ→แก้ไข→ลบ→รีสตาร์ท (27 assertions)
-npm run test:all        # รันทั้งสามชุด (97 assertions)
+npm run test:quotation  # ทดสอบใบเสนอราคา: migration/เลขซ้ำ/คำนวณ/สถานะ/สิทธิ์ (74 assertions)
+npm run test:all        # รันทั้งสี่ชุด (171 assertions)
 ```
 
-ทั้งสามชุดรันบนเซิร์ฟเวอร์ชั่วคราว (พอร์ต 3999 / 3997 / 3998) โดยใช้ database ชั่วคราว
-`cmr_test_api` / `cmr_test_auth` / `cmr_test_lifecycle` แล้ว DROP ทิ้งตอนจบ
+ทั้งสี่ชุดรันบนเซิร์ฟเวอร์ชั่วคราว (พอร์ต 3999 / 3997 / 3998) โดยใช้ database ชั่วคราว
+`cmr_test_api` / `cmr_test_auth` / `cmr_test_lifecycle` / `cmr_test_quo` แล้ว DROP ทิ้งตอนจบ
 ⇒ จบด้วยข้อมูลจริงในฐาน `cmr` คงเดิม 100%
+
+## เริ่มใช้ระบบใบเสนอราคา (ครั้งแรก)
+
+1. `node server.js` — `ensureSchema` จะสร้างตารางใบเสนอราคา/สินค้าให้อัตโนมัติ (idempotent รันซ้ำได้ ไม่แตะข้อมูลเดิม)
+2. เข้าสู่ระบบด้วยบัญชี **admin** → เมนู **ตั้งค่าเอกสาร** → กรอกชื่อบริษัท/ที่อยู่/โลโก้/ค่า VAT เริ่มต้น/เงื่อนไขชำระเงิน
+3. เมนู **สินค้าและบริการ** → เพิ่มสินค้าที่ใช้ประจำ (หรือกรอกในฟอร์มเลยก็ได้)
+4. **ใบเสนอราคา → + สร้างใหม่** → เลือกลูกค้าจาก CRM → เพิ่มรายการ → บันทึก → ดูตัวอย่าง/พิมพ์ PDF
 
 ## แนวทางต่อยอด
 

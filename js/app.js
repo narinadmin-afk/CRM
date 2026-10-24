@@ -87,17 +87,34 @@ function bindSidebar() {
 
 /* ================= router ================= */
 function parseRoute() {
-  const hash = location.hash.replace(/^#\/?/, "");
-  const parts = hash.split("/").filter(Boolean);
-  if (!parts.length) return { name: "dashboard" };
-  if (parts[0] === "records") return { name: "records" };
-  if (parts[0] === "pipeline") return { name: "pipeline" };
-  if (parts[0] === "record" && parts[1]) return { name: "detail", id: decodeURIComponent(parts[1]) };
-  if (parts[0] === "form") return { name: "form", id: parts[1] === "new" ? null : decodeURIComponent(parts[1]) };
-  if (parts[0] === "settings") return { name: "settings" };
-  if (parts[0] === "users") return { name: "users" };
-  if (parts[0] === "login") return { name: "login" };
-  return { name: "dashboard" };
+  const raw = location.hash.replace(/^#\/?/, "");
+  const [pathPart, queryPart] = raw.split("?");
+  const query = {};
+  if (queryPart) for (const [k, v] of new URLSearchParams(queryPart)) query[k] = v;
+  const parts = pathPart.split("/").filter(Boolean);
+  if (!parts.length) return { name: "dashboard", query };
+  if (parts[0] === "records") return { name: "records", query };
+  if (parts[0] === "pipeline") return { name: "pipeline", query };
+  if (parts[0] === "record" && parts[1]) return { name: "detail", id: decodeURIComponent(parts[1]), query };
+  if (parts[0] === "form") return { name: "form", id: parts[1] === "new" ? null : decodeURIComponent(parts[1]), query };
+  if (parts[0] === "settings") return { name: "settings", query };
+  if (parts[0] === "users") return { name: "users", query };
+  if (parts[0] === "login") return { name: "login", query };
+  /* ---- โมดูลใบเสนอราคา ---- */
+  if (parts[0] === "quotations") {
+    if (parts[1] === "list") return { name: "quot-list", query };
+    if (parts[1] === "new") return { name: "quot-new", query };
+    if (parts[1] === "settings") return { name: "quot-settings", query };
+    return { name: "quotations", query };
+  }
+  if (parts[0] === "quotation" && parts[1]) {
+    const id = decodeURIComponent(parts[1]);
+    if (parts[2] === "edit") return { name: "quot-edit", id, query };
+    if (parts[2] === "print") return { name: "quot-print", id, query };
+    return { name: "quot-detail", id, query };
+  }
+  if (parts[0] === "products") return { name: "products", query };
+  return { name: "dashboard", query };
 }
 
 /* ================= สิทธิ์ฝั่ง UI ================= */
@@ -141,11 +158,37 @@ function route() {
   if (state.route.name === "settings" && !p.canManageFields) { toast("ต้องเป็นผู้ดูแลระบบเท่านั้น", "error"); go("#/dashboard"); return; }
   if (state.route.name === "form" && !p.canWrite) { toast("บัญชีผู้ชม (viewer) เพิ่ม/แก้ไขไม่ได้", "error"); go("#/records"); return; }
 
+  /* --- ยามโมดูลใบเสนอราคา (ใช้เฉพาะโหมด API + MySQL เท่านั้น) --- */
+  const QUO_ROUTES = ["quotations", "quot-list", "quot-new", "quot-settings", "quot-detail", "quot-edit", "quot-print", "products"];
+  if (QUO_ROUTES.includes(state.route.name)) {
+    if (!apiMode) { toast("ระบบใบเสนอราคาทำงานบน API + MySQL เท่านั้น", "error"); go("#/dashboard"); return; }
+    if ((state.route.name === "quot-new" || state.route.name === "quot-edit") && !p.canWrite) {
+      toast("บัญชีผู้ชม (viewer) สร้าง/แก้ไขใบเสนอราคาไม่ได้", "error"); go("#/quotations/list"); return;
+    }
+    if (state.route.name === "quot-settings" && !p.canManageFields) {
+      toast("ต้องเป็นผู้ดูแลระบบเท่านั้น", "error"); go("#/quotations"); return;
+    }
+  }
+
   document.querySelectorAll(".nav-item").forEach((el) => {
     const map = { detail: "records", form: "records" };
     const key = map[state.route.name] || state.route.name;
     el.classList.toggle("active", el.dataset.route === key);
   });
+  /* เมนูย่อยใบเสนอราคา */
+  let subKey = "";
+  if (state.route.name === "quot-list") {
+    const st = state.route.query && state.route.query.status;
+    subKey = st ? "quotations-" + String(st).toLowerCase() : "quotations-list";
+    if (!["quotations-draft", "quotations-sent", "quotations-approved", "quotations-expired"].includes(subKey)) subKey = "quotations-list";
+  } else if (state.route.name === "quot-new") subKey = "quotations-new";
+  else if (state.route.name === "quot-settings") subKey = "quotations-settings";
+  else if (state.route.name === "quotations") subKey = "quotations";
+  document.querySelectorAll(".nav-sub-item").forEach((el) => {
+    el.classList.toggle("active", !!subKey && el.dataset.route === subKey);
+  });
+  const quoParent = $("#nav-quotations");
+  if (quoParent) quoParent.classList.toggle("active", subKey !== "" || ["quot-detail", "quot-edit", "quot-print"].includes(state.route.name));
   updateChrome();
   render();
 }
@@ -159,6 +202,13 @@ function updateChrome() {
   if (navUsers) navUsers.hidden = !(apiMode && p.canManageUsers);
   const navSettings = $("#nav-settings");
   if (navSettings) navSettings.hidden = !p.canManageFields;
+  /* โมดูลใบเสนอราคา/สินค้า = โหมด API เท่านั้น */
+  const navQuo = $("#nav-quotations");
+  if (navQuo) navQuo.hidden = !apiMode;
+  const navQuoSub = $("#nav-quotations-sub");
+  if (navQuoSub) navQuoSub.hidden = !apiMode;
+  const navProducts = $("#nav-products");
+  if (navProducts) navProducts.hidden = !apiMode;
 
   const userBox = $("#user-box");
   if (userBox) {
@@ -191,6 +241,15 @@ function render() {
     case "form": main.append(viewForm(state.route.id)); break;
     case "settings": main.append(viewSettings()); break;
     case "users": main.append(viewUsers()); break;
+    /* ---- โมดูลใบเสนอราคา ---- */
+    case "quotations": main.append(viewQuotations()); break;
+    case "quot-list": main.append(viewQuotationsList(state.route.query)); break;
+    case "quot-new": main.append(viewQuotationForm(null, state.route.query)); break;
+    case "quot-detail": main.append(viewQuotationDetail(state.route.id)); break;
+    case "quot-edit": main.append(viewQuotationForm(state.route.id, state.route.query)); break;
+    case "quot-print": main.append(viewQuotationPrint(state.route.id)); break;
+    case "quot-settings": main.append(viewQuotationSettings()); break;
+    case "products": main.append(viewProducts()); break;
     default: main.append(viewDashboard());
   }
   window.scrollTo({ top: 0 });
@@ -638,11 +697,8 @@ function viewPipeline() {
 
   return h("div", {},
     topbar({
-      title: "ขั้นตอนการขาย",
-      sub: "ลากการ์ดไปมาระหว่างคอลัมน์เพื่อเปลี่ยนสถานะ (ลากได้เฉพาะเมื่อใช้ร่วมกับเซิร์ฟเวอร์หรือเบราว์เซอร์เครื่องเดียว)",
-      right: [
-        perms().canWrite ? h("button", { class: "btn primary", onclick: () => go("#/form/new") }, "+ เพิ่มระเบียน") : null
-      ]
+      title: "สถานะ",
+      sub: "ลากการ์ดไปมาระหว่างคอลัมน์เพื่อเปลี่ยนสถานะ (ลากได้เฉพาะเมื่อใช้ร่วมกับเซิร์ฟเวอร์หรือเบราว์เซอร์เครื่องเดียว)"
     }),
     h("div", { class: "page" }, board)
   );
@@ -691,7 +747,10 @@ function viewDetail(id) {
     title: recordTitle(rec),
     sub: (rec.values.customer_code ? rec.values.customer_code + " · " : "") + "อัปเดต " + fmtDateTime(rec.updated_at),
     right: [
-      h("div", { class: "row" },
+      h("div", { class: "row", style: { flexWrap: "wrap" } },
+        (perms().canWrite && perms().loggedIn && !perms().offline && store && store.kind === "api")
+          ? h("button", { class: "btn primary", onclick: () => go("#/quotations/new?customer=" + encodeURIComponent(rec.id)) }, "📄 สร้างใบเสนอราคา")
+          : null,
         canEditUI(rec) ? (() => {
           const sel = h("select", {
             class: "control",
@@ -763,6 +822,17 @@ function viewDetail(id) {
   };
   renderTimeline();
 
+  /* โหลดกิจกรรมล่าสุดจากเซิร์ฟเวอร์ (เหตุการณ์จากโมดูลอื่น เช่น ใบเสนอราคา ไม่อยู่ใน state เดิม) */
+  if (store && store.kind === "api") {
+    store.getRecord(rec.id).then((fresh) => {
+      if (fresh && Array.isArray(fresh.activities)) {
+        rec.activities = fresh.activities;
+        rec.updated_at = fresh.updated_at;
+        renderTimeline();
+      }
+    }).catch(() => { /* เงียบ — ใช้ข้อมูลที่โหลดมาตอนแรกแทน */ });
+  }
+
   const ta = h("textarea", { placeholder: "พิมพ์ความคิดเห็นหรือบันทึกการติดต่อ…" });
   const activityCard = h("div", { class: "card" },
     h("div", { class: "card-head" }, "ความเคลื่อนไหว & บันทึก"),
@@ -790,6 +860,43 @@ function viewDetail(id) {
     )
   );
 
+  /* ---- ประวัติใบเสนอราคาของลูกค้ารายนี้ (โหลดจาก API เมื่อใช้โหมด MySQL) ---- */
+  const quoHistoryCard = h("div", { class: "card" },
+    h("div", { class: "card-head" }, "ประวัติใบเสนอราคา",
+      perms().canWrite && store && store.kind === "api"
+        ? h("a", { href: "#/quotations/new?customer=" + encodeURIComponent(rec.id), class: "muted small", style: { marginLeft: "auto", fontWeight: "400" } }, "+ สร้างใบเสนอราคาให้ลูกค้ารายนี้")
+        : null),
+    h("div", { class: "card-body" }, h("p", { class: "muted mb0 small" }, "กำลังโหลด…"))
+  );
+  if (store && store.kind === "api") {
+    QuoApi.list({ customer_id: rec.id, per_page: 50, sort: "issue_date", dir: "desc" })
+      .then((data) => {
+        const body = quoHistoryCard.querySelector(".card-body");
+        if (!body) return;
+        if (!data.items.length) {
+          fill(body, h("p", { class: "muted mb0" }, "ลูกค้ารายนี้ยังไม่มีใบเสนอราคา"));
+          return;
+        }
+        fill(body,
+          h("div", { class: "table-wrap" }, h("table", { class: "data" },
+            h("thead", {}, h("tr", {}, ["เลขที่", "วันที่ออก", "มูลค่ารวม", "สถานะ"].map((t, i) =>
+              h("th", { class: i === 2 ? "num" : "" }, t)))),
+            h("tbody", {}, data.items.map((q) => h("tr", { style: { cursor: "pointer" }, onclick: () => go("#/quotation/" + q.id) },
+              h("td", { class: "primary-cell mono" }, q.quotation_number),
+              h("td", {}, fmtDate(q.issue_date)),
+              h("td", { class: "num" }, fmtMoney(q.grand_total)),
+              h("td", {}, quoStatusPill(q.status))
+            )))))
+        );
+      })
+      .catch(() => {
+        const body = quoHistoryCard.querySelector(".card-body");
+        if (body) fill(body, h("p", { class: "muted mb0 small" }, "โหลดประวัติใบเสนอราคาไม่สำเร็จ"));
+      });
+  } else {
+    fill(quoHistoryCard.querySelector(".card-body"), h("p", { class: "muted mb0" }, "โหมดออฟไลน์ (localStorage) ไม่รองรับใบเสนอราคา"));
+  }
+
   return h("div", {},
     head,
     h("div", { class: "page" },
@@ -808,8 +915,10 @@ function viewDetail(id) {
             summaryLine("สร้างเมื่อ", fmtDateTime(rec.created_at)),
             summaryLine("ระเบียน ID", h("span", { class: "mono small" }, rec.id))
           )
-        ))
+        ),
+        h("div", { class: "mt16" }, quoHistoryCard)
       )
+    )
     )
   );
 }
@@ -1028,7 +1137,7 @@ function viewSettings() {
         h("div", { class: "card-head" },
           "ฟิลด์ทั้งหมด (" + state.schema.fields.length + ")",
           h("span", { class: "muted small", style: { marginLeft: "auto", fontWeight: "400" } },
-            "ฟิลด์สถานะใช้เป็นคอลัมน์ของมุมมองขั้นตอนการขาย")
+            "ฟิลด์สถานะใช้เป็นคอลัมน์ของมุมมองสถานะ")
         ),
         rows
       ),
@@ -1277,8 +1386,8 @@ function authShell(title, sub, form, footerNote) {
   return h("div", { class: "auth-page" },
     h("div", { class: "auth-card card" },
       h("div", { class: "auth-brand" },
-        h("div", { class: "brand-mark" }, "C"),
-        h("div", {}, h("strong", {}, "Tarmtid.com"), h("span", {}, "ระบบจัดการลูกค้า"))
+        h("div", { class: "brand-mark" }),
+        h("div", {}, h("strong", {}, "Qwikflow CRM"), h("span", {}, "ระบบจัดการลูกค้า"))
       ),
       h("h2", {}, title),
       p2(sub),

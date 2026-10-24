@@ -69,7 +69,8 @@ a { color: var(--primary); text-decoration: none; }
 .brand-mark {
   width: 34px; height: 34px;
   border-radius: 9px;
-  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  /* Qwikflow logo — ครอปเฉพาะส่วนไอคอน Q (ไฟล์เป็นสี่เหลี่ยมจัตุรัส มีพื้นขาว) */
+  background: #fff url("../Qwikflow%20logo.jpg") 53% 22% / 75px 75px no-repeat;
   color: #fff;
   font-weight: 700;
   display: grid;
@@ -711,4 +712,179 @@ select.control.sm { padding: 5px 8px; font-size: 13px; border-radius: 7px; }
   .field-row { grid-template-columns: 1fr; gap: 2px; }
   .field-def-row { grid-template-columns: 1fr auto; }
   .field-def-row .fd-type, .field-def-row .fd-key, .field-def-row .drag-handle { display: none; }
+}
+
+/* ============================================================
+   โมดูลใบเสนอราคา (Quotation Management)
+   ============================================================ */
+
+/* ---- เมนูย่อยใน sidebar ---- */
+.nav-caret { margin-left: auto; font-size: 11px; opacity: .6; }
+.nav-sub {
+  display: flex; flex-direction: column;
+  padding: 2px 0 6px 22px; gap: 1px;
+  border-left: 2px solid rgba(255,255,255,.10);
+  margin: 2px 0 6px 16px;
+}
+.nav-sub-item {
+  color: #93a5c4; font-size: 12.5px;
+  padding: 5px 9px; border-radius: 7px;
+  transition: background .15s, color .15s;
+}
+.nav-sub-item:hover { background: rgba(255,255,255,.07); color: #fff; }
+.nav-sub-item.active { background: rgba(37,99,235,.85); color: #fff; font-weight: 600; }
+@media (max-width: 860px) {
+  .nav-sub { flex-direction: row; flex-wrap: wrap; border-left: none; margin: 0 0 4px; padding-left: 0; }
+}
+
+/* ---- KPI 8 ช่อง ---- */
+.kpi8 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+
+/* ---- ฟอร์มสร้าง/แก้ไข ---- */
+.quo-form-wrap { max-width: 1150px; display: flex; flex-direction: column; gap: 16px; }
+.stack-sm { display: flex; flex-direction: column; gap: 4px; }
+.stack-sm input { width: 100%; }
+.cust-summary {
+  background: var(--surface-2); border: 1px dashed var(--border-strong);
+  border-radius: 9px; padding: 10px 12px; min-width: 230px;
+}
+.quo-items td { vertical-align: top; }
+.quo-items input { min-width: 0; }
+.quo-items td:nth-child(2) input, .quo-items td:nth-child(5) input { width: 100%; }
+.line-total-td { font-weight: 700; color: var(--primary-dark); white-space: nowrap; }
+
+/* ---- สรุปยอด + คำอ่านไทย ---- */
+.quo-summary {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 9px; padding: 12px 14px;
+}
+.quo-sum-row {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 5px 0; font-size: 13.5px; color: var(--text-2);
+}
+.quo-sum-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+.quo-sum-row.strong { border-top: 1px dashed var(--border-strong); margin-top: 4px; padding-top: 8px; color: var(--text); font-weight: 600; }
+.quo-sum-row.grand {
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+  margin-top: 6px; padding: 8px 10px; color: var(--primary-dark); font-weight: 700;
+}
+.quo-sum-row.grand b { color: var(--primary-dark); font-size: 15px; }
+.quo-bahttext {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border);
+  font-size: 13px; color: var(--text-2); font-style: italic;
+}
+
+/* ---- picker (ลูกค้า/สินค้า) ---- */
+.picker-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.picker-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: 1px solid transparent; border-radius: 9px;
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.picker-item:hover { background: var(--primary-soft); border-color: #bfdbfe; }
+
+/* ============================================================
+   เอกสารใบเสนอราคา A4 (preview + พิมพ์/บันทึก PDF)
+   ============================================================ */
+.print-area {
+  padding: 24px 16px 60px;
+  background: #e8ecf3;
+  min-height: calc(100vh - 64px);
+  display: flex; justify-content: center;
+}
+.qt-doc {
+  width: 210mm; min-height: 297mm;
+  background: #fff; color: #111;
+  padding: 16mm 15mm;
+  box-shadow: var(--shadow-lg);
+  font-size: 13px; line-height: 1.55;
+  font-family: "Noto Sans Thai", system-ui, sans-serif;
+}
+
+.qt-head { display: flex; justify-content: space-between; gap: 18px; border-bottom: 3px solid #1e293b; padding-bottom: 12px; }
+.qt-company { display: flex; gap: 12px; align-items: flex-start; }
+.qt-logo { width: 58px; height: 58px; object-fit: contain; flex: 0 0 58px; }
+.qt-logo-fallback {
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  color: #fff; font-weight: 700; font-size: 22px; border-radius: 12px;
+}
+.qt-cname { font-size: 17px; font-weight: 700; }
+.qt-caddr { color: #334155; font-size: 12.5px; }
+.qt-company > div > div { font-size: 12.5px; color: #334155; }
+.qt-title { text-align: right; }
+.qt-title > div:first-child { font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+.qt-title-en { font-size: 12px; color: #64748b; letter-spacing: 4px; }
+.qt-number { margin-top: 5px; font-size: 15px; font-weight: 700; color: #1d4ed8; }
+
+.qt-meta { display: flex; justify-content: space-between; gap: 24px; margin: 14px 0; }
+.qt-cust { max-width: 60%; }
+.qt-label { font-size: 11.5px; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
+.qt-cust-name { font-size: 15px; font-weight: 700; margin: 2px 0; }
+.qt-cust > div { font-size: 12.5px; color: #334155; }
+.qt-dates { min-width: 210px; }
+.qt-date-row { display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; padding: 2px 0; }
+.qt-date-row span { color: #64748b; }
+
+.qt-items { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.qt-items thead { display: table-header-group; }           /* หัวตารางซ้ำทุกหน้าตอนพิมพ์ */
+.qt-items tr { page-break-inside: avoid; }
+.qt-items th {
+  background: #1e293b; color: #fff; font-size: 12px; font-weight: 600;
+  padding: 7px 8px; text-align: left;
+}
+.qt-items td { border-bottom: 1px solid #e2e8f0; padding: 7px 8px; vertical-align: top; font-size: 12.5px; }
+.qt-items .num { text-align: right; font-variant-numeric: tabular-nums; }
+.qt-c-no { width: 34px; text-align: center; }
+.qt-c-qty { width: 58px; }
+.qt-c-unit { width: 56px; }
+.qt-c-price, .qt-c-disc { width: 84px; }
+.qt-c-total { width: 96px; }
+.qt-items th.qt-c-no, .qt-items th.qt-c-qty, .qt-items th.qt-c-unit,
+.qt-items th.qt-c-price, .qt-items th.qt-c-disc, .qt-items th.qt-c-total { text-align: right; }
+.qt-items th.qt-c-no, .qt-items th.qt-c-unit { text-align: center; }
+.qt-item-name { font-weight: 600; }
+.qt-item-code, .qt-item-desc { font-size: 11.5px; color: #64748b; }
+
+.qt-foot-grid { display: flex; justify-content: space-between; gap: 20px; margin-top: 14px; }
+.qt-terms { flex: 1; font-size: 12.5px; color: #334155; }
+.qt-terms > div { margin-bottom: 5px; }
+.qt-baht { margin-top: 10px; font-weight: 700; color: #1e293b; }
+.qt-totals { min-width: 250px; }
+.qt-total-row {
+  display: flex; justify-content: space-between; gap: 16px;
+  font-size: 12.5px; padding: 4px 8px; font-variant-numeric: tabular-nums;
+}
+.qt-total-row.strong { background: #1e293b; color: #fff; font-weight: 700; font-size: 14px; border-radius: 6px; margin-top: 4px; padding: 7px 9px; }
+
+.qt-sign { display: flex; justify-content: space-between; gap: 24px; margin-top: 42px; }
+.qt-sign-col { flex: 1; text-align: center; font-size: 12.5px; }
+.qt-sign-line { border-top: 1px dotted #475569; margin-top: 44px; padding-top: 5px; min-height: 24px; color: #334155; }
+.qt-note-print { margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0; font-size: 10.5px; color: #94a3b8; text-align: center; }
+
+/* ---- ตอนพิมพ์: ซ่อน chrome ของแอป เหลือเฉพาะเอกสาร ---- */
+@media print {
+  @page { size: A4; margin: 12mm; }
+  body { background: #fff !important; }
+  .sidebar, .topbar, .toast-root, .modal-backdrop, .progress-strip { display: none !important; }
+  .app { display: block; }
+  .main { display: block; }
+  .print-area { padding: 0; background: #fff; display: block; min-height: 0; }
+  .qt-doc {
+    width: auto; min-height: 0; padding: 0; box-shadow: none; margin: 0;
+    font-size: 12pt;
+  }
+  .qt-items th { background: #1e293b !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .qt-total-row.strong { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .qt-logo-fallback { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ---- responsive ของโมดูล ---- */
+@media (max-width: 860px) {
+  .qt-doc { width: 100%; min-height: 0; padding: 14px; }
+  .qt-head, .qt-meta, .qt-foot-grid { flex-direction: column; gap: 10px; }
+  .qt-title { text-align: left; }
+  .qt-cust { max-width: 100%; }
+  .qt-sign { flex-direction: column; gap: 30px; }
+  .print-area { padding: 10px; }
 }

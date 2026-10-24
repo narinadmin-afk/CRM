@@ -6,11 +6,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check shared/seed.js && node --check js/ui.js && node --check js/csv.js && node --check js/auth.js && node --check js/store.js && node --check js/app.js",
+    "check": "node --check server.js && node --check shared/seed.js && node --check shared/quotation.js && node --check js/ui.js && node --check js/csv.js && node --check js/auth.js && node --check js/store.js && node --check js/quotation.js && node --check js/app.js",
     "test": "node tests/api.test.mjs",
     "test:auth": "node tests/auth.test.mjs",
     "test:lifecycle": "node tests/lifecycle.test.mjs",
-    "test:all": "node tests/api.test.mjs && node tests/auth.test.mjs && node tests/lifecycle.test.mjs"
+    "test:quotation": "node tests/quotation.test.mjs",
+    "test:all": "node tests/api.test.mjs && node tests/auth.test.mjs && node tests/lifecycle.test.mjs && node tests/quotation.test.mjs"
   },
   "engines": {
     "node": ">=22.5.0"
