@@ -215,6 +215,21 @@ try {
   r = await raw("DELETE", `/api/users/${adminId}`, undefined, adminCookie);
   ok("ลบบัญชีตัวเองไม่ได้ (400)", r.code === 400);
 
+  /* ---------- รูปหน้าปกผู้ใช้ ---------- */
+  const avatarPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  r = await raw("PATCH", `/api/users/${memberId}`, { avatar: avatarPng }, adminCookie);
+  ok("admin ตั้งรูปหน้าปกให้ผู้ใช้ได้", r.code === 200 && r.json.user.avatar === avatarPng);
+  r = await raw("GET", "/api/users", {}, adminCookie);
+  ok("รูปหน้าปกถูกส่งกลับในรายชื่อผู้ใช้", r.code === 200 && r.json.some((u) => u.id === memberId && u.avatar === avatarPng));
+  r = await raw("PATCH", `/api/users/${memberId}`, { avatar: "<script>alert(1)</script>" }, adminCookie);
+  ok("ปฏิเสธรูปที่ไม่ใช่ data:image (400)", r.code === 400);
+  r = await raw("PATCH", `/api/users/${memberId}`, { avatar: "x".repeat(1500000) }, adminCookie);
+  ok("ปฏิเสธรูปที่ใหญ่เกิน 1 MB (400)", r.code === 400);
+  r = await raw("PATCH", `/api/users/${memberId}`, { avatar: null }, adminCookie);
+  ok("ลบรูปหน้าปกได้", r.code === 200 && r.json.user.avatar === null);
+  r = await raw("PATCH", `/api/users/${memberId}`, { avatar: avatarPng }, memberCookie);
+  ok("member ตั้งค่าตัวเองไม่ได้ (member ไม่ใช่ admin → 403)", r.code === 403);
+
   r = await raw("PATCH", `/api/users/${viewerId}`, { active: false }, adminCookie);
   ok("ระงับบัญชี viewer ได้", r.code === 200 && r.json.user.active === false);
   r = await raw("GET", "/api/records", {}, viewerCookie);

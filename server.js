@@ -100,6 +100,13 @@ async function ensureSchema() {
   const conn = await mysql.createConnection({ ...DB, multipleStatements: true, charset: "utf8mb4" });
   try {
     await conn.query(ddl);
+    /* migration: เพิ่มคอลัมน์ users.avatar ถ้ายังไม่มี (ตาราง CREATE IF NOT EXISTS ไม่เติมคอลัมน์ใหม่เอง) */
+    const [cols] = await conn.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS " +
+      "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'users' AND COLUMN_NAME = 'avatar'",
+      [DB_NAME]
+    );
+    if (!cols.length) await conn.query("ALTER TABLE `users` ADD COLUMN `avatar` LONGTEXT NULL");
   } finally {
     await conn.end();
   }
@@ -172,7 +179,8 @@ function publicUser(u) {
   if (!u) return null;
   return {
     id: u.id, username: u.username, display_name: u.display_name,
-    email: u.email, role: u.role, role_label: ROLE_LABELS[u.role] || u.role,
+    email: u.email, avatar: u.avatar || null, role: u.role,
+    role_label: ROLE_LABELS[u.role] || u.role,
     active: !!u.active, created_at: Number(u.created_at)
   };
 }
@@ -797,6 +805,15 @@ async function handleApi(req, res, pathname) {
         if (!dn) { sendJson(res, 400, { error: "ชื่อที่แสดงห้ามว่าง" }); return true; }
         target.display_name = dn;
       }
+      if (body.avatar !== undefined) {
+        const a = body.avatar;
+        if (a === null || a === "") target.avatar = null;
+        else if (typeof a === "string" && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(a) && a.length <= 1400000) {
+          target.avatar = a;
+        } else {
+          sendJson(res, 400, { error: "ไฟล์รูปภาพไม่ถูกต้องหรือใหญ่เกินไป (สูงสุด 1 MB)" }); return true;
+        }
+      }
       if (body.email !== undefined) target.email = String(body.email).trim();
       if (body.password !== undefined) {
         if (String(body.password).length < 6) { sendJson(res, 400, { error: "รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร" }); return true; }
@@ -805,8 +822,8 @@ async function handleApi(req, res, pathname) {
       }
 
       await pool.query(
-        "UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, password_hash = ? WHERE id = ?",
-        [target.display_name, target.email, target.role, target.active, target.password_hash, target.id]
+        "UPDATE users SET display_name = ?, email = ?, role = ?, active = ?, password_hash = ?, avatar = ? WHERE id = ?",
+        [target.display_name, target.email, target.role, target.active, target.password_hash, target.avatar || null, target.id]
       );
       sendJson(res, 200, { user: publicUser(target) });
       return true;

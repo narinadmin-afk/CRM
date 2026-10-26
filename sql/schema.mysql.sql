@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `username`      VARCHAR(100) NOT NULL,
   `display_name`  VARCHAR(150) NOT NULL,
   `email`         VARCHAR(190) NOT NULL DEFAULT '',
+  `avatar`        LONGTEXT     NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `role`          VARCHAR(20)  NOT NULL DEFAULT 'member',
   `active`        TINYINT(1)   NOT NULL DEFAULT 1,

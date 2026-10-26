@@ -206,7 +206,14 @@ function updateChrome() {
       $("#user-name").textContent = state.user.display_name;
       $("#user-role").textContent = state.user.role_label;
       $("#user-role").className = "role-pill role-" + state.user.role;
-      $("#user-avatar").textContent = initials(state.user.display_name);
+      const avEl = $("#user-avatar");
+      if (state.user.avatar) {
+        avEl.textContent = "";
+        avEl.style.backgroundImage = `url("${state.user.avatar}")`;
+      } else {
+        avEl.style.backgroundImage = "";
+        avEl.textContent = initials(state.user.display_name);
+      }
     }
   }
 
@@ -510,6 +517,53 @@ function localToday() {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
+/* ---------- ข้อความงานในปฏิทิน (แก้ไขได้ เก็บเฉพาะเครื่อง — ไม่แตะฐานข้อมูลจริง) ---------- */
+const CAL_NOTE_KEY = "cmr_cal_notes";
+function calNotes() {
+  try { return JSON.parse(localStorage.getItem(CAL_NOTE_KEY) || "{}"); } catch { return {}; }
+}
+/** ข้อความที่แสดงบนชิปงาน = ข้อความที่แก้ไว้ในเครื่อง (ถ้ามี) มิฉะั้น = ชื่อลูกค้า */
+function calText(r) {
+  const n = calNotes()[r.id];
+  return (n !== undefined && String(n).trim()) ? String(n) : recordTitle(r);
+}
+function openCalNoteModal(r) {
+  const notes = calNotes();
+  const original = recordTitle(r);
+  const hasNote = notes[r.id] !== undefined;
+  const inp = h("textarea", { class: "control", rows: 3, placeholder: original });
+  inp.value = hasNote ? notes[r.id] : "";
+  const err = authErrorBox();
+
+  const persist = (value) => {
+    const all = calNotes();
+    if (value === null) delete all[r.id];
+    else all[r.id] = value;
+    localStorage.setItem(CAL_NOTE_KEY, JSON.stringify(all));
+    closeModal();
+    render();
+  };
+
+  openModal({
+    title: "แก้ไขข้อความงาน",
+    body: h("div", {},
+      h("p", { class: "muted small" }, "ข้อความนี้บันทึกเฉพาะเครื่องนี้เท่านั้น ไม่ส่งขึ้นฐานข้อมูลจริง"),
+      authField("ข้อความตารางงาน", inp, "ชื่อเดิม: " + original),
+      err
+    ),
+    footer: [
+      h("button", { class: "btn", onclick: closeModal }, "ยกเลิก"),
+      hasNote ? h("button", { class: "btn", onclick: () => { persist(null); toast("กลับเป็นชื่อเดิมแล้ว", "success"); } }, "ล้างกลับเป็นชื่อเดิม") : null,
+      h("button", { class: "btn primary", onclick: () => {
+        const v = inp.value.trim();
+        if (!v || v === original) { persist(null); toast("กลับเป็นชื่อเดิมแล้ว", "success"); return; }
+        persist(v);
+        toast("บันทึกข้อความแล้ว (เฉพาะเครื่องนี้)", "success");
+      } }, "บันทึก")
+    ]
+  });
+}
+
 /** วันสิ้นเดือนของเดือนถัดไป/ก่อนหน้า ใช้คุม cursor ของปฏิทิน */
 function shiftMonth(delta) {
   const c = state.cal || { y: new Date().getFullYear(), m: new Date().getMonth() };
@@ -563,11 +617,15 @@ function viewCalendar() {
       h("div", { class: "cal-date" }, String(d.getDate())),
       items.slice(0, 3).map((r) => h("div", {
         class: "cal-item",
-        title: recordTitle(r) + " · " + (r.values.status || "—"),
+        title: calText(r) + " · " + (r.values.status || "—"),
         onclick: () => go("#/record/" + r.id)
       },
-        h("span", { class: "cal-item-name" }, recordTitle(r)),
-        statusPill(r.values.status, state.schema)
+        h("span", { class: "cal-item-name" }, calText(r)),
+        statusPill(r.values.status, state.schema),
+        h("button", {
+          class: "cal-edit", title: "แก้ไขข้อความงาน", "aria-label": "แก้ไขข้อความงาน",
+          onclick: (e) => { e.stopPropagation(); openCalNoteModal(r); }
+        }, "✎")
       )),
       items.length > 3 ? h("div", { class: "cal-more" }, "+" + (items.length - 3)) : null
     ));
@@ -1638,8 +1696,38 @@ function viewLogin() {
 }
 
 /* ================= users view (admin) ================= */
+/** สร้าง element รูปโปรไฟล์ผู้ใช้ (มีรูป = แสดงภาพ, ไม่มี = ตัวอักษรย่อ) */
+function userAvatar(u, sizeClass = "") {
+  const cls = "avatar" + (sizeClass ? " " + sizeClass : "") + (u && u.avatar ? " has-img" : "");
+  const el = h("div", { class: cls }, u && u.avatar ? "" : initials(u && u.display_name));
+  if (u && u.avatar) el.style.backgroundImage = `url("${u.avatar}")`;
+  return el;
+}
+
 function viewUsers() {
   const tableBox = h("div");
+
+  /** ย่อรูปเป็น data URL (最长 960px, jpeg 0.82) เพื่อให้ base64 ไม่เกิน 1 MB */
+  const compressImage = (file, maxDim = 960, quality = 0.82) => new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith("image/")) { reject(new Error("ไฟล์นี้ไม่ใช่รูปภาพ")); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const hh = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas");
+      c.width = w; c.height = hh;
+      c.getContext("2d").drawImage(img, 0, 0, w, hh);
+      let out = c.toDataURL("image/jpeg", quality);
+      if (out.length > 1400000) out = c.toDataURL("image/jpeg", quality - 0.15);
+      if (out.length > 1400000) { reject(new Error("รูปใหญ่เกินไป (สูงสุด 1 MB)")); return; }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("เปิดไฟล์รูปไม่ได้")); };
+    img.src = url;
+  });
 
   const load = async () => {
     try {
@@ -1652,7 +1740,7 @@ function viewUsers() {
     if (!users.length) return h("div", { class: "empty" }, h("p", {}, "ยังไม่มีผู้ใช้"));
     return h("div", { class: "table-wrap" }, h("table", { class: "data" },
       h("thead", {}, h("tr", {},
-        ["ชื่อผู้ใช้", "ชื่อที่แสดง", "อีเมล", "บทบาท", "สถานะ", "ระเบียนที่สร้าง", "จัดการ"].map((t) => h("th", {}, t))
+        ["ชื่อผู้ใช้", "ชื่อที่แสดง", "อีเมล", "บทบาท", "สถานะ", "ระเบียนที่สร้าง", "รูปปก", "จัดการ"].map((t) => h("th", {}, t))
       )),
       h("tbody", {}, users.map((u) => {
         const isSelf = state.user && u.id === state.user.id;
@@ -1667,13 +1755,41 @@ function viewUsers() {
         } }, Object.entries(ROLE_LABEL_TH).map(([k, v]) => h("option", { value: k }, v)));
         roleSel.value = u.role;
 
+        /* ----- รูปหน้าปก (อัปโหลด/เปลี่ยน/ลบ) ----- */
+        const saveAvatar = async (dataUrl) => {
+          try {
+            const res = await Auth.updateUser(u.id, { avatar: dataUrl });
+            if (state.user && state.user.id === u.id) {
+              state.user.avatar = res.user.avatar;
+              Auth.user = res.user;
+              updateChrome();
+            }
+            toast(dataUrl ? "อัปโหลดรูปหน้าปกแล้ว" : "ลบรูปหน้าปกแล้ว", "success");
+            await load();
+          } catch (ex) { toast(ex.message, "error"); }
+        };
+        const fileInp = h("input", { type: "file", accept: "image/*", style: { display: "none" } });
+        fileInp.addEventListener("change", async () => {
+          const f = fileInp.files && fileInp.files[0];
+          fileInp.value = "";
+          if (!f) return;
+          try { await saveAvatar(await compressImage(f)); }
+          catch (ex) { toast(ex.message, "error"); }
+        });
+
         return h("tr", {},
           h("td", { class: "primary-cell" }, u.username, isSelf ? h("span", { class: "tag" }, "คุณ") : null),
-          h("td", {}, h("div", { class: "row" }, h("div", { class: "avatar" }, initials(u.display_name)), u.display_name)),
+          h("td", {}, h("div", { class: "row" }, userAvatar(u), u.display_name)),
           h("td", { class: "muted" }, u.email || "—"),
           h("td", {}, roleSel),
           h("td", {}, h("span", { class: "pill " + (u.active ? "s-won" : "s-lost") }, u.active ? "ใช้งาน" : "ระงับ")),
           h("td", { class: "num" }, u.record_count || 0),
+          h("td", {}, h("div", { class: "row" },
+            fileInp,
+            userAvatar(u, "lg"),
+            h("button", { class: "btn sm", onclick: () => fileInp.click() }, u.avatar ? "เปลี่ยนรูป" : "อัปโหลด"),
+            u.avatar ? h("button", { class: "btn sm danger", onclick: () => saveAvatar(null) }, "ลบรูป") : null
+          )),
           h("td", {}, h("div", { class: "row" },
             h("button", { class: "btn sm", onclick: () => openPasswordModal(u) }, "รหัสผ่าน"),
             h("button", { class: "btn sm", disabled: isSelf, onclick: async () => {

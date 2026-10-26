@@ -360,6 +360,8 @@ table.data tr:hover .row-actions { opacity: 1; }
   display: grid; place-items: center; font-weight: 700; font-size: 13px;
   flex: 0 0 30px;
 }
+.avatar.has-img { background-size: cover; background-position: center; background-repeat: no-repeat; color: transparent; }
+.avatar.lg { width: 44px; height: 44px; flex: 0 0 44px; font-size: 15px; border: 1px solid var(--border); }
 
 /* ---------- kanban ---------- */
 .kanban {
@@ -639,6 +641,7 @@ table.data tr:hover .row-actions { opacity: 1; }
   flex: 1 1 auto;
 }
 .user-box .avatar { width: 30px; height: 30px; flex: 0 0 30px; background: rgba(255,255,255,.12); color: #fff; }
+.user-box .avatar.has-img { background-color: rgba(255,255,255,.12); }
 .user-meta { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; flex: 1; }
 .user-meta strong { color: #fff; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-box .link-btn { flex: 0 0 auto; }
@@ -993,6 +996,12 @@ table.data.quo-items { table-layout: fixed; min-width: 760px; }
   min-width: 0;
 }
 .cal-item .pill { font-size: 9px; padding: 1px 5px; flex: none; }
+.cal-edit {
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-3); font-size: 11px; line-height: 1;
+  padding: 1px 3px; border-radius: 4px; flex: none;
+}
+.cal-edit:hover { color: var(--primary); background: var(--primary-soft); }
 .cal-more { font-size: 10px; color: var(--text-3); text-align: center; }
 @media (max-width: 860px) {
   .cal-day { min-height: 64px; padding: 4px; }
