@@ -69,8 +69,8 @@ a { color: var(--primary); text-decoration: none; }
 .brand-mark {
   width: 34px; height: 34px;
   border-radius: 9px;
-  /* Qwikflow logo — ครอปเฉพาะส่วนไอคอน Q (ไฟล์เป็นสี่เหลี่ยมจัตุรัส มีพื้นขาว) */
-  background: #fff url("../Qwikflow%20logo.jpg") 53% 22% / 75px 75px no-repeat;
+  /* Qwikflow logo — ครอปให้เห็นไอคอน Q + ใบไม้เขียวเต็มใบ (ไฟล์เป็นสี่เหลี่ยมจัตุรัส มีพื้นขาว) */
+  background: #fff url("../Qwikflow%20logo.jpg") 66% 43% / 50px 50px no-repeat;
   color: #fff;
   font-weight: 700;
   display: grid;
@@ -917,6 +917,86 @@ table.data.quo-items { table-layout: fixed; min-width: 760px; }
   .qt-items th { background: #1e293b !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .qt-total-row.strong { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .qt-logo-fallback { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ---- responsive ของโมดูล ---- */
+/* ---- หน้าปฏิทินติดตามงาน ---- */
+.cal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.cal-card { padding: 16px; }
+.cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.cal-title { font-size: 17px; font-weight: 700; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.cal-dow {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 4px 0 8px;
+  text-transform: uppercase;
+}
+.cal-day {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 92px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+.cal-day.other { opacity: .45; }
+.cal-day.today { border-color: var(--primary); background: var(--primary-soft); }
+.cal-day.overdue { border-color: #fca5a5; background: #fef2f2; }
+.cal-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  line-height: 1;
+}
+.cal-day.today .cal-date { color: var(--primary); }
+.cal-day.overdue .cal-date { color: var(--danger); }
+.cal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 5px;
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 0;
+}
+.cal-item:hover { border-color: var(--primary); box-shadow: 0 1px 4px rgba(37, 99, 235, .15); }
+.cal-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.cal-item .pill { font-size: 9px; padding: 1px 5px; flex: none; }
+.cal-more { font-size: 10px; color: var(--text-3); text-align: center; }
+@media (max-width: 860px) {
+  .cal-day { min-height: 64px; padding: 4px; }
+  .cal-item .pill { display: none; }
 }
 
 /* ---- responsive ของโมดูล ---- */

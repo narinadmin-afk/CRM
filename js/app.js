@@ -13,6 +13,7 @@ let state = {
   filters: { status: "", owner: "" },
   dashFilters: { owner: "", status: "", follow: "", customer: "" },
   sort: { key: "__updated", dir: "desc" },
+  cal: null,
   dragId: null
 };
 
@@ -102,6 +103,7 @@ function parseRoute() {
   if (parts[0] === "pipeline") return { name: "pipeline", query };
   if (parts[0] === "record" && parts[1]) return { name: "detail", id: decodeURIComponent(parts[1]), query };
   if (parts[0] === "form") return { name: "form", id: parts[1] === "new" ? null : decodeURIComponent(parts[1]), query };
+  if (parts[0] === "calendar") return { name: "calendar", query };
   if (parts[0] === "settings") return { name: "settings", query };
   if (parts[0] === "users") return { name: "users", query };
   if (parts[0] === "login") return { name: "login", query };
@@ -180,19 +182,6 @@ function route() {
     const key = map[state.route.name] || state.route.name;
     el.classList.toggle("active", el.dataset.route === key);
   });
-  /* เมนูย่อยใบเสนอราคา */
-  let subKey = "";
-  if (state.route.name === "quot-list") {
-    /* ตัวกรองสถานะใน URL ไม่มีเมนูย่อยแล้ว → ไฮไลต์ “รายการทั้งหมด” เสมอ */
-    subKey = "quotations-list";
-  } else if (state.route.name === "quot-new") subKey = "quotations-new";
-  else if (state.route.name === "quot-settings") subKey = "quotations-settings";
-  else if (state.route.name === "quotations") subKey = "quotations";
-  document.querySelectorAll(".nav-sub-item").forEach((el) => {
-    el.classList.toggle("active", !!subKey && el.dataset.route === subKey);
-  });
-  const quoParent = $("#nav-quotations");
-  if (quoParent) quoParent.classList.toggle("active", subKey !== "" || ["quot-detail", "quot-edit", "quot-print"].includes(state.route.name));
   updateChrome();
   render();
 }
@@ -206,13 +195,9 @@ function updateChrome() {
   if (navUsers) navUsers.hidden = !(apiMode && p.canManageUsers);
   const navSettings = $("#nav-settings");
   if (navSettings) navSettings.hidden = !p.canManageFields;
-  /* โมดูลใบเสนอราคา/สินค้า = โหมด API เท่านั้น */
-  const navQuo = $("#nav-quotations");
-  if (navQuo) navQuo.hidden = !apiMode;
-  const navQuoSub = $("#nav-quotations-sub");
-  if (navQuoSub) navQuoSub.hidden = !apiMode;
+  /* โมดูลสินค้าถูกตัดออกจากเมนูแล้ว — ซ่อนไว้กัน HTML เก่า */
   const navProducts = $("#nav-products");
-  if (navProducts) navProducts.hidden = !apiMode;
+  if (navProducts) navProducts.hidden = true;
 
   const userBox = $("#user-box");
   if (userBox) {
@@ -243,6 +228,7 @@ function render() {
       renderRecordsBody();
       break;
     case "pipeline": main.append(viewPipeline()); break;
+    case "calendar": main.append(viewCalendar()); break;
     case "detail": main.append(viewDetail(state.route.id)); break;
     case "form": main.append(viewForm(state.route.id)); break;
     case "settings": main.append(viewSettings()); break;
@@ -514,6 +500,103 @@ function kpi(label, value, sub, tone) {
     h("div", { class: "k-label" }, label),
     h("div", { class: "k-value" }, value),
     h("div", { class: "k-sub" }, sub)
+  );
+}
+
+/* ================= calendar (ติดตามงานตามวันที่) ================= */
+/** วันนี้ในรูป YYYY-MM-DD ตามเวลาเครื่อง (ไม่ใช่ UTC เหมือน toISOString) */
+function localToday() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+/** วันสิ้นเดือนของเดือนถัดไป/ก่อนหน้า ใช้คุม cursor ของปฏิทิน */
+function shiftMonth(delta) {
+  const c = state.cal || { y: new Date().getFullYear(), m: new Date().getMonth() };
+  const d = new Date(c.y, c.m + delta, 1);
+  state.cal = { y: d.getFullYear(), m: d.getMonth() };
+  render();
+}
+
+function viewCalendar() {
+  if (!state.cal) {
+    const n = new Date();
+    state.cal = { y: n.getFullYear(), m: n.getMonth() };
+  }
+  const { y, m } = state.cal;
+  const today = localToday();
+  const loc = typeof i18nLocale === "function" ? i18nLocale() : "th-TH";
+
+  /* จับระเบียนที่มี "นัดครั้งถัดไป" รวมเป็น map ตามวันที่ */
+  const byDate = {};
+  for (const r of state.records) {
+    const d = r.values.next_followup;
+    if (!d) continue;
+    (byDate[d] = byDate[d] || []).push(r);
+  }
+
+  /* หัวตาราง: ชื่อวันตาม locale ปัจจุบัน (จันทร์→อาทิตย์) */
+  const weekFmt = new Intl.DateTimeFormat(loc, { weekday: "short" });
+  const dows = [1, 2, 3, 4, 5, 6, 0].map((dow) =>
+    h("div", { class: "cal-dow" }, weekFmt.format(new Date(2024, 0, 7 + dow)))
+  );
+
+  /* startdate = วันอาทิตย์ก่อนวันแรกของเดือน → 42 ช่อง (6 สัปดาห์) */
+  const first = new Date(y, m, 1);
+  const start = new Date(y, m, 1 - first.getDay());
+  const monthFmt = new Intl.DateTimeFormat(loc, { month: "long", year: "numeric" });
+
+  let monthCount = 0;
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const items = byDate[key] || [];
+    if (d.getMonth() === m) monthCount += items.length;
+    const past = key < today;
+    cells.push(h("div", {
+      class: "cal-day" +
+        (d.getMonth() === m ? "" : " other") +
+        (key === today ? " today" : "") +
+        (items.length && past ? " overdue" : "")
+      },
+      h("div", { class: "cal-date" }, String(d.getDate())),
+      items.slice(0, 3).map((r) => h("div", {
+        class: "cal-item",
+        title: recordTitle(r) + " · " + (r.values.status || "—"),
+        onclick: () => go("#/record/" + r.id)
+      },
+        h("span", { class: "cal-item-name" }, recordTitle(r)),
+        statusPill(r.values.status, state.schema)
+      )),
+      items.length > 3 ? h("div", { class: "cal-more" }, "+" + (items.length - 3)) : null
+    ));
+  }
+
+  const calCard = h("div", { class: "card cal-card" },
+    h("div", { class: "cal-toolbar" },
+      h("div", { class: "cal-title" }, monthFmt.format(first)),
+      h("div", { class: "row" },
+        h("button", { class: "btn sm", onclick: () => shiftMonth(-1) }, "← เดือนก่อน"),
+        h("button", { class: "btn sm", onclick: () => { const n = new Date(); state.cal = { y: n.getFullYear(), m: n.getMonth() }; render(); } }, "วันนี้"),
+        h("button", { class: "btn sm", onclick: () => shiftMonth(1) }, "เดือนถัดไป →")
+      )
+    ),
+    h("div", { class: "cal-grid" },
+      dows
+    ),
+    h("div", { class: "cal-grid cal-days" }, cells),
+    h("div", { class: "small muted mt16" }, "งานเดือนนี้ " + monthCount + " รายการ")
+  );
+
+  return h("div", {},
+    topbar({
+      title: "ปฏิทินติดตามงาน",
+      sub: "งานที่นัดตามวันที่ (นัดครั้งถัดไป) เพื่อไม่ให้งานหลุด"
+    }),
+    h("div", { class: "page" },
+      h("div", { class: "cal-layout" }, calCard)
+    )
   );
 }
 
